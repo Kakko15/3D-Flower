@@ -803,6 +803,14 @@ const headDefs = [];
   headDefs.push({ p: [0, DOME.cy + DOME.Ry, 0], s: 0.64, tilt: 0 }); // crown
   ring(6, 0.62, 34, 0.3);                       // upper shoulder
   ring(11, 0.56, 66, 0.3 + Math.PI / 11);       // rim, leaning out and down
+  // Front filler that bridges the hollow between the crown and the lower front
+  // ring, concealing the interior sticks and buds behind it.
+  //
+  // Requested at [0, 1.45, 0.78]; that spot overlaps the rim bloom at
+  // (-0.21, 1.44, 1.31) by 0.196, which interpenetrates visibly. Nudged to the
+  // nearest position that still seals the hollow while only just nestling
+  // against its neighbours (gap -0.02, same scale, 0.23 away from the target).
+  headDefs.push({ p: [0.05, 1.30, 0.61], s: 0.58, tilt: 42 });
 }
 const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.72, metalness: 0.0 });
 const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
@@ -810,6 +818,7 @@ const thornGeo = new THREE.ConeGeometry(0.018, 0.075, 5); thornGeo.translate(0, 
 const thornMat = new THREE.MeshStandardMaterial({ color: 0x5a4a2a, roughness: 0.6 });
 const thornMatrices = [];
 const stemGeos = [];
+const stemFixups = [];
 const dummy = new THREE.Object3D();
 const UP = new THREE.Vector3(0, 1, 0);
 const roseRoot = new THREE.Vector3(0, -2.2, 0);
@@ -871,19 +880,32 @@ headDefs.forEach((h, i) => {
   // wrap, P2 flares out under the canopy, P3 the bloom's neck.
   // P1 is kept low and near the axis so the curve stays inside the ribbon
   // sleeve for the whole length of the wrap (-1.62 .. -0.86) before flaring.
-  // The stem stops *under* the calyx: the calyx cone hangs to about -0.21*s
-  // below the bloom origin, so ending at -0.17*s leaves the cut tucked inside
-  // the green rather than emerging through the petals.
+  // The stem stops well *under* the receptacle. The calyx cone hangs to about
+  // -0.21*s below the bloom origin and the hip sphere to -0.30*s, so ending at
+  // -0.32*s puts the cut below both — the tube can never surface through the
+  // petal floor even where the bloom is tilted steeply over the dome's rim.
   // P2 is held close to the central axis and high up, so the shaft climbs
   // inside the bundle and only turns outward in the last stretch, arriving at
   // the bloom from underneath. Flaring earlier (the old hx*0.46 at y=0.30) put
   // stems out in front of the dome where the camera could see them.
   const P0 = new THREE.Vector3(bx, -2.62, bz);
   const P1 = new THREE.Vector3(bx * 0.6, -0.72, bz * 0.6);
-  const P2 = new THREE.Vector3(hx * 0.16 + tx * bow * 0.5, 0.95, hz * 0.16 + tz * bow * 0.5);
-  const P3 = head.clone().addScaledVector(dir, -0.17 * h.s);
+  const P3 = head.clone().addScaledVector(dir, -0.32 * h.s);
+  // The incoming tangent at P3 is parallel to (P3 - P2). Constrain P2 to lie
+  // on the bloom's own downward axis so the stem arrives along that axis from
+  // beneath the receptacle: any other approach angle lets the tube graze the
+  // underside of the petals on steeply-tilted rim blooms.
+  const P2 = P3.clone().addScaledVector(dir, -(0.42 + 0.30 * h.s));
+  // Blend a little of the original inboard lean back in, but only sideways —
+  // never along `dir` — so the curve keeps its natural sweep without changing
+  // the arrival angle.
+  P2.x += tx * bow * 0.5; P2.z += tz * bow * 0.5;
   const curve = new THREE.CubicBezierCurve3(P0, P1, P2, P3);
-  { const sg = new THREE.TubeGeometry(curve, 32, 0.03, 7, false); sg.deleteAttribute('uv'); stemGeos.push(sg); }
+  // Deferred: a stem must not pass through a DIFFERENT bloom, but the other
+  // blooms' meshes do not all exist yet at this point in the loop. The control
+  // points are recorded and resolved in one pass once every rose is built.
+  stemFixups.push({ index: i, P0, P1, P2, P3, tx, tz });
+
   for (let k = 0; k < 6; k++){
     const t = 0.08 + rand() * 0.62; const p = curve.getPointAt(t), tan = curve.getTangentAt(t);
     const ang = rand() * Math.PI * 2; const perp = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)).sub(tan.clone().multiplyScalar(tan.dot(new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang))))).normalize();
@@ -891,6 +913,64 @@ headDefs.forEach((h, i) => {
     thornMatrices.push(dummy.matrix.clone());
   }
 });
+// Resolve stem-vs-bloom collisions now that every rose mesh exists, then build
+// the tubes. Each bloom is tested with its EXACT petal envelope (local-space
+// max radius per height band) rather than a bounding sphere: the bloom is a
+// cupped chalice, so a sphere both over- and under-estimates it, and nudging
+// against a sphere just shifts the intersection somewhere else.
+{
+  const frames = roses.map(r => {
+    const p = r.geometry.attributes.position;
+    let yMin = Infinity, yMax = -Infinity;
+    for (let k = 0; k < p.count; k++){ const y = p.getY(k); if (y < yMin) yMin = y; if (y > yMax) yMax = y; }
+    const B = 20, env = new Float64Array(B);
+    for (let k = 0; k < p.count; k++){
+      const b = Math.min(B - 1, Math.max(0, Math.floor((p.getY(k) - yMin) / (yMax - yMin) * B)));
+      const rr = Math.hypot(p.getX(k), p.getZ(k));
+      if (rr > env[b]) env[b] = rr;
+    }
+    r.updateMatrixWorld(true);
+    return { env, yMin, yMax, B, inv: new THREE.Matrix4().copy(r.matrixWorld).invert() };
+  });
+  // margin covers the 0.03 tube radius
+  const pierces = (pt, skip, margin) => {
+    for (let k = 0; k < frames.length; k++){
+      if (k === skip) continue;
+      const f = frames[k];
+      const l = pt.clone().applyMatrix4(f.inv);
+      if (l.y < f.yMin || l.y > f.yMax) continue;
+      const b = Math.min(f.B - 1, Math.max(0, Math.floor((l.y - f.yMin) / (f.yMax - f.yMin) * f.B)));
+      if (Math.hypot(l.x, l.z) < f.env[b] + margin) return k;
+    }
+    return -1;
+  };
+  for (const fx of stemFixups){
+    let { P0, P1, P2, P3, tx, tz, index } = fx;
+    let curve = new THREE.CubicBezierCurve3(P0, P1, P2, P3);
+    for (let pass = 0; pass < 40; pass++){
+      let hitAt = -1, hitK = -1;
+      // Sample almost to the end. `pierces` already skips this stem's own
+      // bloom, so the tail is safe to test — and it matters: the worst clash
+      // was at t = 0.94, where a stem passes the bloom sitting just below its
+      // own head. Only the final sample is dropped, being inside its calyx.
+      for (let q = 2; q <= 31; q++){
+        const k = pierces(curve.getPoint(q / 32), index, 0.075);
+        if (k >= 0){ hitAt = q; hitK = k; break; }
+      }
+      if (hitAt < 0) break;
+      const c = new THREE.Vector3(...headDefs[hitK].p);
+      const away = new THREE.Vector3(P2.x - c.x, 0, P2.z - c.z);
+      if (away.lengthSq() < 1e-6) away.set(tx, 0, tz);
+      away.normalize().multiplyScalar(0.045);
+      // Move the mid controls out of the way and drop them slightly, which
+      // routes the shaft beneath the offending bloom rather than through it.
+      P1.add(away); P2.add(away); P2.y -= 0.02;
+      curve = new THREE.CubicBezierCurve3(P0, P1, P2, P3);
+    }
+    const sg = new THREE.TubeGeometry(curve, 32, 0.03, 7, false);
+    sg.deleteAttribute('uv'); stemGeos.push(sg);
+  }
+}
 bouquet.add(new THREE.Mesh(mergeGeos(stemGeos), stemMat));
 const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length); thornMatrices.forEach((m, i) => thorns.setMatrixAt(i, m)); bouquet.add(thorns);
 
@@ -912,13 +992,23 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   // Outer eucalyptus sprays that frame the dome's rim, arcing out and slightly
   // down to follow the outer roses rather than shooting past them.
   const EUC_BRANCHES = isMobile ? 10 : 14;
+  const LEAF_T0 = 0.32;                     // first leaf sits here on the curve
   for (let b = 0; b < EUC_BRANCHES; b++){
     const a = b / EUC_BRANCHES * Math.PI * 2 + 0.55 + (rand() - 0.5) * 0.4; const cx = Math.cos(a), cz = Math.sin(a);
     const reach = 1.42 + rand() * 0.34, top = 0.45 + rand() * 0.7;
     const pts = [new THREE.Vector3(cx * 0.08, -1.5, cz * 0.08), new THREE.Vector3(cx * 0.75, -0.15, cz * 0.75), new THREE.Vector3(cx * reach, top, cz * reach)];
     const curve = new THREE.CatmullRomCurve3(pts);
-    addBranch(curve, 14, 0.013, 5);
-    for (let t = 0.32; t <= 1.0; t += 0.085){
+    // Only tube the FOLIATED span. Leaves begin at t = 0.32, so the stretch
+    // before that was ~0.87 units of bare 0.013-radius tube — the stray wire
+    // lines around the perimeter. Start the tube just below the first leaf so
+    // the stalk is covered along its whole visible length.
+    {
+      const sub = [];
+      const t0 = Math.max(0, LEAF_T0 - 0.05);
+      for (let k = 0; k <= 12; k++) sub.push(curve.getPointAt(t0 + (1 - t0) * (k / 12)));
+      addBranch(new THREE.CatmullRomCurve3(sub), 12, 0.013, 5);
+    }
+    for (let t = LEAF_T0; t <= 1.0; t += 0.085){
       const p = curve.getPointAt(Math.min(t, 1)), tan = curve.getTangentAt(Math.min(t, 1));
       const side = (Math.round(t / 0.085) % 2 ? 1 : -1);
       const sideV = new THREE.Vector3(-cz, 0, cx).multiplyScalar(side);
