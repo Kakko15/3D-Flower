@@ -181,11 +181,28 @@
   .chip.f1{font-family:"Great Vibes",cursive;font-size:1.1rem}
   .chip.f2{font-family:"Pinyon Script",cursive;font-size:1.1rem}
   .chip.f3{font-family:"Parisienne",cursive;font-size:1rem}
-  #msg{width:100%;min-height:200px;resize:vertical;border-radius:14px;padding:16px;background:rgba(255,250,240,.06);border:1px solid rgba(255,255,255,.14);color:var(--ui);font-family:"Cormorant Garamond",serif;font-size:1.1rem;line-height:1.55;outline:none;transition:border .3s}
+  #msg{width:100%;min-height:180px;resize:vertical;border-radius:14px;padding:16px;background:rgba(255,250,240,.06);border:1px solid rgba(255,255,255,.14);color:var(--ui);font-family:"Cormorant Garamond",serif;font-size:1.1rem;line-height:1.55;outline:none;transition:border .3s}
   #msg:focus{border-color:rgba(243,220,149,.6)}
+  .input-gold{width:100%;border-radius:12px;padding:10px 14px;background:rgba(255,250,240,.06);border:1px solid rgba(255,255,255,.14);color:var(--ui);font-family:"Jost",system-ui,sans-serif;font-size:.92rem;outline:none;transition:border .3s,background .3s}
+  .input-gold:focus{border-color:rgba(243,220,149,.7);background:rgba(255,250,240,.1)}
+  .name-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:600px){.name-grid{grid-template-columns:1fr}}
   #modal .row{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
-  .btn-ghost{padding:12px 20px;border-radius:999px;font-size:.7rem;letter-spacing:.26em;text-transform:uppercase;border:1px solid rgba(255,255,255,.18);transition:all .3s}
+  .btn-ghost{padding:10px 18px;border-radius:999px;font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;border:1px solid rgba(255,255,255,.18);transition:all .3s;display:inline-flex;align-items:center;gap:6px}
   .btn-ghost:hover{background:rgba(255,255,255,.1)}
+
+  /* ---------- Share modal ---------- */
+  #shareModal{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:rgba(6,3,2,.65);opacity:0;pointer-events:none;transition:opacity .4s}
+  #shareModal.on{opacity:1;pointer-events:auto}
+  #shareModal .card{width:min(520px,100%);border-radius:24px;padding:clamp(22px,4vw,34px);text-align:center;transform:translateY(20px) scale(.98);transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+  #shareModal.on .card{transform:none}
+  .share-link-box{display:flex;align-items:center;background:rgba(0,0,0,.4);border:1px solid rgba(212,175,55,.35);border-radius:12px;padding:6px 8px;margin:16px 0;gap:8px}
+  .share-link-box input{flex:1;background:none;border:none;color:var(--gold-2);font-family:monospace;font-size:.78rem;padding:4px 6px;outline:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .share-actions{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+  .btn-share-primary{width:100%;display:inline-flex;justify-content:center;align-items:center;gap:10px;padding:14px 22px;border-radius:999px;font-size:.82rem;letter-spacing:.18em;text-transform:uppercase;color:#2a1a08;background:linear-gradient(135deg,#f6e3a6,#d4af37 55%,#b8860b);box-shadow:0 12px 35px rgba(212,175,55,.35);transition:all .35s;font-weight:500}
+  .btn-share-primary:hover{transform:translateY(-2px);box-shadow:0 16px 45px rgba(212,175,55,.5)}
+  .btn-share-secondary{width:100%;display:inline-flex;justify-content:center;align-items:center;gap:10px;padding:12px 18px;border-radius:999px;font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);transition:all .3s}
+  .btn-share-secondary:hover{background:rgba(255,255,255,.14)}
 </style>
 </head>
 <body>
@@ -204,7 +221,7 @@
     <div class="env-lining"></div>
     <div class="env-stub" id="stub"><div class="lines"></div></div>
     <div class="env-pocket"><div class="side"></div><div class="side r"></div><div class="bottom"></div></div>
-    <div class="env-address">For you, always<small>by candlelight &amp; rose</small></div>
+    <div class="env-address" id="envAddress">For you, always<small>by candlelight &amp; rose</small></div>
     <div class="env-flap" id="flap">
       <div class="flap-face flap-front"></div>
       <div class="flap-face flap-back"></div>
@@ -242,7 +259,7 @@
   </div>
   <div class="letter-actions glass" id="letterActions" style="border-radius:999px;padding:6px">
     <button id="btnCustomise"><i data-lucide="pen-line"></i><span>Customise Letter</span></button>
-    <button id="btnShare" class="primary"><i data-lucide="share-2"></i><span>Seal &amp; Share</span></button>
+    <button id="btnShare" class="primary"><i data-lucide="share-2"></i><span>Share Letter</span></button>
     <button id="btnFold"><i data-lucide="fold-vertical"></i><span>Fold Away</span></button>
   </div>
 </div>
@@ -250,17 +267,72 @@
 <!-- Customise modal -->
 <div id="modal">
   <div class="card glass">
-    <h3>Customise the letter</h3>
-    <div style="font-size:.8rem;opacity:.6">Write your own words, or choose a timeless verse. The calligraphy will rewrite itself.</div>
-    <div class="lbl">Curated verses</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">Customise the letter</h3>
+      <button class="btn-ghost" id="btnCloseModal" style="padding:6px 14px;font-size:0.75rem">✕</button>
+    </div>
+    <div style="font-size:.82rem;opacity:.7;margin-bottom:14px">Write your own words, set recipient &amp; sender, or choose a timeless verse.</div>
+    
+    <div class="name-grid">
+      <div>
+        <div class="lbl" style="margin-top:0">To / Recipient</div>
+        <input type="text" id="recipientInput" class="input-gold" placeholder="e.g. Marga" maxlength="40" spellcheck="false" />
+      </div>
+      <div>
+        <div class="lbl" style="margin-top:0">From / Your Name</div>
+        <input type="text" id="senderInput" class="input-gold" placeholder="e.g. Dave" maxlength="40" spellcheck="false" />
+      </div>
+    </div>
+
+    <div class="lbl">Curated verses (or write your own)</div>
     <div class="chips" id="poemChips"></div>
+
     <div class="lbl">Your message</div>
-    <textarea id="msg" spellcheck="false"></textarea>
-    <div class="lbl">Calligraphy</div>
+    <textarea id="msg" spellcheck="false" placeholder="Write your letter here..."></textarea>
+
+    <div class="lbl">Calligraphy style</div>
     <div class="chips" id="fontChips"></div>
-    <div class="row">
+
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="btn-ghost" id="btnResetDefault" style="margin-right:auto">Reset</button>
       <button class="btn-ghost" id="btnCancel">Cancel</button>
-      <button class="btn-gold" id="btnApply"><i data-lucide="sparkles"></i>Rewrite</button>
+      <button class="btn-ghost" id="btnApply"><i data-lucide="sparkles"></i> Preview</button>
+      <button class="btn-gold" id="btnSaveAndShare"><i data-lucide="send"></i> Save &amp; Get Share Link</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share modal -->
+<div id="shareModal">
+  <div class="card glass">
+    <div style="width:52px;height:52px;margin:0 auto 12px;border-radius:50%;background:linear-gradient(135deg,rgba(212,175,55,.3),rgba(212,175,55,.08));border:1px solid rgba(243,220,149,.4);display:grid;place-items:center;color:var(--gold-2);box-shadow:0 8px 24px rgba(212,175,55,.25)">
+      <i data-lucide="heart" style="width:26px;height:26px"></i>
+    </div>
+    <h3 id="shareModalTitle" style="margin:0 0 6px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:1.85rem;color:var(--gold-2)">Your Letter is Ready!</h3>
+    <p id="shareModalDesc" style="font-size:0.86rem;opacity:0.85;margin:0 0 16px;line-height:1.5">Send this link to <strong id="shareRecipientName" style="color:var(--gold-2)">Marga</strong>. When opened, your personalized 3D rose and letter will unfold.</p>
+    
+    <div class="share-link-box">
+      <input type="text" id="shareLinkInput" readonly value="" />
+      <button class="btn-gold" id="btnCopyLinkInline" style="padding:8px 14px;font-size:0.72rem;white-space:nowrap;gap:6px">
+        <i data-lucide="copy" style="width:13px;height:13px"></i> <span>Copy</span>
+      </button>
+    </div>
+
+    <div class="share-actions">
+      <button class="btn-share-primary" id="btnCopyLinkMain">
+        <i data-lucide="copy"></i> <span id="copyBtnText">Copy Shareable Link</span>
+      </button>
+      <button class="btn-share-secondary" id="btnNativeShare">
+        <i data-lucide="share-2"></i> <span>Send via Chat / App</span>
+      </button>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn-share-secondary" id="btnDownloadCard" style="flex:1">
+          <i data-lucide="camera"></i> <span>Photo Card</span>
+        </button>
+        <button class="btn-share-secondary" id="btnCloseShareModal" style="flex:1">
+          <i data-lucide="check"></i> <span>Done</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -273,7 +345,7 @@
   <div class="sep"></div>
   <button id="btnMute"><i data-lucide="volume-2" id="icoOn"></i><i data-lucide="volume-x" id="icoOff" class="hidden"></i><span class="tip">Sound</span></button>
   <button id="btnCustomise2"><i data-lucide="pen-line"></i><span class="tip">Customise</span></button>
-  <button id="btnShare2"><i data-lucide="camera"></i><span class="tip">Seal &amp; Share</span></button>
+  <button id="btnShare2"><i data-lucide="share-2"></i><span class="tip">Share Letter</span></button>
   <button id="btnReplay"><i data-lucide="rotate-ccw"></i><span class="tip">Replay</span></button>
 </nav>
 
@@ -283,9 +355,9 @@
 <div id="intro">
   <div class="in">
     <div class="ornament"></div>
-    <h2>A Letter, Sealed in Roses</h2>
-    <p>Somewhere between the petals rests a keepsake written for you alone.<br/>Draw near, and break the seal.</p>
-    <button class="btn-gold" id="btnBegin"><i data-lucide="heart"></i>Open the Keepsake</button>
+    <h2 id="introTitle">A Letter, Sealed in Roses</h2>
+    <p id="introDesc">Somewhere between the petals rests a keepsake written for you alone.<br/>Draw near, and break the seal.</p>
+    <button class="btn-gold" id="btnBegin"><i data-lucide="heart"></i><span id="btnBeginText">Open the Keepsake</span></button>
     <small>Headphones recommended · Best experienced unhurried</small>
   </div>
 </div>
@@ -1083,26 +1155,135 @@ const FONTS = [
   { name: 'Pinyon Script', css: '"Pinyon Script", cursive', size: '1.68rem', style: 'normal', lh: 1.55, canvas: '36px "Pinyon Script"' },
   { name: 'Parisienne', css: '"Parisienne", cursive', size: '1.55rem', style: 'normal', lh: 1.55, canvas: '34px "Parisienne"' },
 ];
-const state = { text: ORIGINAL, font: 0, poem: 0, stage: 'sealed', written: false };
+const state = { text: ORIGINAL, to: '', from: '', font: 0, poem: 0, stage: 'sealed', written: false };
+function escapeHtml(s){
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
 function applyFont(i){
   state.font = i; const f = FONTS[i]; const r = document.documentElement.style;
   r.setProperty('--ink-font', f.css); r.setProperty('--ink-size', isMobile ? `calc(${f.size} * 0.86)` : f.size); r.setProperty('--ink-style', f.style); r.setProperty('--ink-lh', f.lh);
   document.querySelectorAll('#fontChips .chip').forEach((c, k) => c.classList.toggle('active', k === i));
 }
-// URL state
-const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const b64d = s => { try { return decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/')))); } catch (e) { return null; } };
+
+// URL & Storage state
+function b64e(s){
+  try {
+    return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch (e){ return ''; }
+}
+function b64d(s){
+  try {
+    let str = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    return decodeURIComponent(escape(atob(str)));
+  } catch (e){
+    try {
+      let str = s.replace(/-/g, '+').replace(/_/g, '/');
+      while (str.length % 4) str += '=';
+      return atob(str);
+    } catch (err){ return null; }
+  }
+}
+function getShareableURL(){
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  const q = new URLSearchParams();
+  if (state.to) q.set('to', state.to);
+  if (state.from) q.set('from', state.from);
+  if (state.text && state.text !== ORIGINAL) q.set('m', b64e(state.text));
+  if (state.font) q.set('f', state.font);
+  if (currentPreset) q.set('p', currentPreset);
+  const qs = q.toString();
+  return url.origin + url.pathname + (qs ? '?' + qs : '');
+}
 function updateURL(){
-  const q = new URLSearchParams(); if (state.text !== ORIGINAL) q.set('m', b64e(state.text)); if (state.font) q.set('f', state.font); if (currentPreset) q.set('l', currentPreset);
-  const qs = q.toString(); history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+  try {
+    const newUrl = getShareableURL();
+    history.replaceState(null, '', newUrl);
+  } catch (e){}
+}
+function saveToStorage(){
+  try {
+    localStorage.setItem('juliet_saved_letter', JSON.stringify({
+      text: state.text, to: state.to, from: state.from, font: state.font, preset: currentPreset, updatedAt: Date.now()
+    }));
+  } catch (e){}
+}
+function loadFromStorage(){
+  try {
+    const raw = localStorage.getItem('juliet_saved_letter');
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved && (saved.text || saved.to || saved.from)){
+      if (saved.text) state.text = saved.text;
+      if (saved.to) state.to = saved.to;
+      if (saved.from) state.from = saved.from;
+      if (typeof saved.font === 'number' && saved.font < FONTS.length) state.font = saved.font;
+      if (typeof saved.preset === 'number' && saved.preset < presets.length) currentPreset = saved.preset;
+      updateURL();
+    }
+  } catch (e){}
+}
+function updateEnvelopeDisplay(){
+  const addr = $('#envAddress');
+  if (addr){
+    if (state.to){
+      const fromLine = state.from ? `from ${escapeHtml(state.from)} · ` : '';
+      addr.innerHTML = `For ${escapeHtml(state.to)}<small>${fromLine}by candlelight &amp; rose</small>`;
+    } else {
+      addr.innerHTML = `For you, always<small>by candlelight &amp; rose</small>`;
+    }
+  }
+  const sealMono = $('#sealFace .mono');
+  if (sealMono){
+    if (state.to && state.to.trim().length > 0){
+      sealMono.textContent = state.to.trim()[0].toUpperCase();
+    } else {
+      sealMono.textContent = 'J';
+    }
+  }
+}
+function updateIntroDisplay(){
+  const title = $('#introTitle');
+  const desc = $('#introDesc');
+  const btn = $('#btnBeginText');
+  if (!title) return;
+  if (state.to){
+    title.textContent = `A Letter for ${state.to}`;
+    if (state.from){
+      desc.innerHTML = `Written with love by <em>${escapeHtml(state.from)}</em> · Sealed between the rose petals.<br/>Draw near, and break the seal.`;
+    } else {
+      desc.innerHTML = `Somewhere between the petals rests a keepsake written for you alone.<br/>Draw near, and break the seal.`;
+    }
+    if (btn) btn.textContent = `Open ${state.to}'s Letter`;
+  } else {
+    title.textContent = 'A Letter, Sealed in Roses';
+    desc.innerHTML = 'Somewhere between the petals rests a keepsake written for you alone.<br/>Draw near, and break the seal.';
+    if (btn) btn.textContent = 'Open the Keepsake';
+  }
 }
 function readURL(){
-  const q = new URLSearchParams(location.search);
+  let q = new URLSearchParams(location.search);
+  if (!q.get('m') && !q.get('to') && location.hash){
+    const h = location.hash.replace(/^#\/?/, '');
+    if (h.includes('=')) q = new URLSearchParams(h);
+    else if (h.length > 4) q.set('m', h);
+  }
+  const to = q.get('to'); if (to) state.to = to.trim();
+  const from = q.get('from'); if (from) state.from = from.trim();
   const m = q.get('m'); if (m){ const d = b64d(m); if (d) state.text = d; }
   const f = +q.get('f'); if (f >= 0 && f < FONTS.length) state.font = f;
-  const l = +q.get('l'); if (l >= 0 && l < presets.length) currentPreset = l;
+  const l = +(q.get('l') || q.get('p')); if (l >= 0 && l < presets.length) currentPreset = l;
+  if (to || from || m){
+    saveToStorage();
+  } else {
+    loadFromStorage();
+  }
 }
 readURL(); applyFont(state.font); applyPreset(currentPreset, 0.01);
+updateEnvelopeDisplay(); updateIntroDisplay();
 
 /* =========================================================
    CALLIGRAPHY WRITER
@@ -1249,33 +1430,182 @@ $('#btnReplay').addEventListener('click', () => { Audio.resume(); Audio.chime(52
 /* =========================================================
    CUSTOMISE MODAL
    ========================================================= */
-const modal = $('#modal'), msg = $('#msg');
-POEMS.forEach((p, i) => { const b = document.createElement('button'); b.className = 'chip' + (i === 0 ? ' active' : ''); b.textContent = p.name; b.addEventListener('click', () => { msg.value = p.text; document.querySelectorAll('#poemChips .chip').forEach((c, k) => c.classList.toggle('active', k === i)); Audio.chime(880, 0.03); }); $('#poemChips').appendChild(b); });
-FONTS.forEach((f, i) => { const b = document.createElement('button'); b.className = 'chip f' + i + (i === state.font ? ' active' : ''); b.textContent = f.name; b.addEventListener('click', () => { applyFont(i); Audio.chime(1046.5, 0.03); }); $('#fontChips').appendChild(b); });
+const modal = $('#modal'), msg = $('#msg'), recipientInput = $('#recipientInput'), senderInput = $('#senderInput');
+POEMS.forEach((p, i) => {
+  const b = document.createElement('button');
+  b.className = 'chip' + (i === 0 ? ' active' : '');
+  b.textContent = p.name;
+  b.addEventListener('click', () => {
+    msg.value = p.text;
+    document.querySelectorAll('#poemChips .chip').forEach((c, k) => c.classList.toggle('active', k === i));
+    Audio.chime(880, 0.03);
+  });
+  $('#poemChips').appendChild(b);
+});
+FONTS.forEach((f, i) => {
+  const b = document.createElement('button');
+  b.className = 'chip f' + i + (i === state.font ? ' active' : '');
+  b.textContent = f.name;
+  b.addEventListener('click', () => {
+    applyFont(i);
+    Audio.chime(1046.5, 0.03);
+  });
+  $('#fontChips').appendChild(b);
+});
 let fontBefore = 0;
-function openModal(){ msg.value = state.text; fontBefore = state.font; modal.classList.add('on'); Audio.resume(); Audio.chime(659.25, 0.04); }
+function openModal(){
+  msg.value = state.text;
+  if (recipientInput) recipientInput.value = state.to || '';
+  if (senderInput) senderInput.value = state.from || '';
+  fontBefore = state.font;
+  modal.classList.add('on');
+  if (window.lucide) lucide.createIcons();
+  Audio.resume();
+  Audio.chime(659.25, 0.04);
+}
 function closeModal(apply){
   modal.classList.remove('on');
   if (apply){
-    const txt = msg.value.trim(); if (txt) state.text = txt; updateURL();
-    if (state.stage === 'reading'){ writeToken++; gsap.to(ink, { opacity: 0, duration: 0.35, onComplete: () => { ink.scrollTop = 0; writeLetter(state.text); gsap.to(ink, { opacity: 1, duration: 0.5 }); } }); }
-    toast('Your words are set in ink'); Audio.shimmer(659.25);
-  } else applyFont(fontBefore);
+    if (recipientInput) state.to = recipientInput.value.trim();
+    if (senderInput) state.from = senderInput.value.trim();
+    const txt = msg.value.trim();
+    if (txt) state.text = txt;
+    saveToStorage();
+    updateURL();
+    updateEnvelopeDisplay();
+    updateIntroDisplay();
+    if (state.stage === 'reading'){
+      writeToken++;
+      gsap.to(ink, { opacity: 0, duration: 0.35, onComplete: () => {
+        ink.scrollTop = 0;
+        writeLetter(state.text);
+        gsap.to(ink, { opacity: 1, duration: 0.5 });
+      }});
+    }
+    toast('Your words are set in ink');
+    Audio.shimmer(659.25);
+  } else {
+    applyFont(fontBefore);
+  }
 }
 ['#btnCustomise', '#btnCustomise2'].forEach(s => $(s).addEventListener('click', openModal));
-$('#btnCancel').addEventListener('click', () => closeModal(false)); $('#btnApply').addEventListener('click', () => closeModal(true));
+$('#btnCancel').addEventListener('click', () => closeModal(false));
+$('#btnCloseModal').addEventListener('click', () => closeModal(false));
+$('#btnApply').addEventListener('click', () => closeModal(true));
+$('#btnSaveAndShare').addEventListener('click', () => {
+  closeModal(true);
+  setTimeout(openShareModal, 150);
+});
+$('#btnResetDefault').addEventListener('click', () => {
+  state.text = ORIGINAL;
+  state.to = '';
+  state.from = '';
+  state.font = 0;
+  if (recipientInput) recipientInput.value = '';
+  if (senderInput) senderInput.value = '';
+  msg.value = ORIGINAL;
+  applyFont(0);
+  saveToStorage();
+  updateURL();
+  updateEnvelopeDisplay();
+  updateIntroDisplay();
+  toast('Reset to default Juliet letter');
+});
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(false); });
-addEventListener('keydown', e => { if (e.key === 'Escape') modal.classList.contains('on') ? closeModal(false) : (state.stage === 'reading' && foldAway()); });
+addEventListener('keydown', e => {
+  if (e.key === 'Escape'){
+    if (modal.classList.contains('on')) closeModal(false);
+    else if ($('#shareModal').classList.contains('on')) closeShareModal();
+    else if (state.stage === 'reading') foldAway();
+  }
+});
 
 /* =========================================================
-   SEAL & SHARE — snapshot + URL state
+   SHARE MODAL & SHARING WORKFLOW
+   ========================================================= */
+const shareModal = $('#shareModal');
+async function copyToClipboard(text){
+  if (navigator.clipboard && window.isSecureContext){
+    try { await navigator.clipboard.writeText(text); return true; } catch (e){}
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e){}
+  ta.remove();
+  return ok;
+}
+function openShareModal(){
+  updateURL();
+  saveToStorage();
+  const url = getShareableURL();
+  $('#shareLinkInput').value = url;
+  const title = $('#shareModalTitle');
+  const desc = $('#shareModalDesc');
+  if (state.to){
+    title.textContent = `Sealed for ${state.to} 💌`;
+    desc.innerHTML = `Send this link to <strong style="color:var(--gold-2)">${escapeHtml(state.to)}</strong>. When opened, your personalized 3D rose and letter will unfold.`;
+  } else {
+    title.textContent = 'Your Letter is Ready! 💌';
+    desc.textContent = 'Send this link to someone special. When opened, your 3D rose and letter will unfold.';
+  }
+  $('#copyBtnText').textContent = 'Copy Shareable Link';
+  shareModal.classList.add('on');
+  if (window.lucide) lucide.createIcons();
+  Audio.resume();
+  Audio.chime(880, 0.05);
+}
+function closeShareModal(){
+  shareModal.classList.remove('on');
+}
+async function copyShareLink(){
+  const url = getShareableURL();
+  await copyToClipboard(url);
+  $('#copyBtnText').textContent = '✓ Copied! Send this link in chat ❤️';
+  Audio.shimmer(987.77);
+  confetti({ particleCount: 50, spread: 80, origin: { y: 0.6 }, colors: ['#d4af37', '#f5e1a4', '#f7c7a3'] });
+  const recipientName = state.to ? state.to : 'your special someone';
+  toast(`Link copied! Send it in chat to ${recipientName} 🌹`, 3500);
+  setTimeout(() => { $('#copyBtnText').textContent = 'Copy Shareable Link'; }, 4500);
+}
+async function nativeShare(){
+  const url = getShareableURL();
+  const toStr = state.to ? ` for ${state.to}` : '';
+  const fromStr = state.from ? ` from ${state.from}` : '';
+  if (navigator.share){
+    try {
+      await navigator.share({
+        title: `🌹 A Letter${toStr}`,
+        text: `I wrote a sealed 3D rose love letter${toStr}${fromStr}. Break the seal to read it:`,
+        url: url
+      });
+      return;
+    } catch (e){}
+  }
+  copyShareLink();
+}
+
+$('#btnCopyLinkInline').addEventListener('click', copyShareLink);
+$('#btnCopyLinkMain').addEventListener('click', copyShareLink);
+$('#btnNativeShare').addEventListener('click', nativeShare);
+$('#btnCloseShareModal').addEventListener('click', closeShareModal);
+shareModal.addEventListener('click', e => { if (e.target === shareModal) closeShareModal(); });
+['#btnShare', '#btnShare2'].forEach(s => $(s).addEventListener('click', openShareModal));
+
+/* =========================================================
+   PHOTO CARD GENERATOR (Keepsake Snapshot)
    ========================================================= */
 function wrapText(ctx, text, maxW){
   const out = []; text.split('\n').forEach(line => { if (!line.trim()){ out.push(''); return; } let cur = ''; line.split(' ').forEach(w => { const test = cur ? cur + ' ' + w : w; if (ctx.measureText(test).width > maxW && cur){ out.push(cur); cur = w; } else cur = test; }); out.push(cur); }); return out;
 }
-async function sealAndShare(){
-  Audio.resume(); Audio.chime(1318.5, 0.06); updateURL();
-  const url = location.href; try { await navigator.clipboard.writeText(url); } catch (e) {}
+async function downloadPhotoCard(){
+  Audio.resume(); Audio.chime(1318.5, 0.06);
   const f = FONTS[state.font]; try { await document.fonts.load(f.canvas); await document.fonts.load('40px "Pinyon Script"'); } catch (e) {}
   composer.render();
   const W = 1600, H = Math.round(1600 * innerHeight / innerWidth); const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
@@ -1283,20 +1613,24 @@ async function sealAndShare(){
   const vg = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.9); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)'); g.fillStyle = vg; g.fillRect(0, 0, W, H);
   // parchment card
   const cw = Math.min(640, W * 0.42), pad = 44; g.font = f.canvas;
-  const lines = wrapText(g, state.text, cw - pad * 2); const lh = 40; const ch = Math.min(H - 120, lines.length * lh + pad * 2 + 40);
+  const lines = wrapText(g, state.text, cw - pad * 2); const lh = 40; const ch = Math.min(H - 120, lines.length * lh + pad * 2 + 60);
   const cx = W - cw - 60, cy = (H - ch) / 2;
   g.save(); g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 50; g.shadowOffsetY = 20; g.fillStyle = '#f2e6cf'; g.beginPath(); g.roundRect(cx, cy, cw, ch, 6); g.fill(); g.restore();
   const pg = g.createLinearGradient(0, cy, 0, cy + ch); pg.addColorStop(0, 'rgba(255,255,255,.35)'); pg.addColorStop(1, 'rgba(120,80,30,.12)'); g.fillStyle = pg; g.fillRect(cx, cy, cw, ch);
   g.save(); g.beginPath(); g.rect(cx, cy, cw, ch); g.clip(); g.fillStyle = '#3b2a1c'; g.font = f.canvas; g.textBaseline = 'top';
-  lines.forEach((ln, i) => g.fillText(ln, cx + pad, cy + pad + i * lh)); g.restore();
+  if (state.to) { g.font = 'italic 22px "Cormorant Garamond"'; g.fillText(`For ${state.to}`, cx + pad, cy + 20); }
+  g.font = f.canvas;
+  const startY = state.to ? cy + pad + 24 : cy + pad;
+  lines.forEach((ln, i) => g.fillText(ln, cx + pad, startY + i * lh)); g.restore();
   g.fillStyle = 'rgba(138,95,18,.8)'; g.font = '26px "Pinyon Script"'; g.fillText('❦', cx + cw - 50, cy + 18);
   g.fillStyle = '#f3dc95'; g.font = '300 18px Jost'; g.textAlign = 'left'; g.fillText('SEALED WITH ROSES  ·  ' + new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase(), 60, H - 60);
   g.font = '72px "Pinyon Script"'; g.fillText('Juliet', 60, H - 150);
-  await new Promise(res => c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'juliet-rose-letter.png'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); res(); }, 400); }, 'image/png'));
+  const fileName = state.to ? `letter-for-${state.to.toLowerCase().replace(/[^a-z0-9]/g, '-')}.png` : 'juliet-rose-letter.png';
+  await new Promise(res => c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); res(); }, 400); }, 'image/png'));
   confetti({ particleCount: 60, spread: 100, origin: { y: 0.65 }, colors: ['#d4af37', '#f5e1a4', '#f7c7a3', '#ffffff'], scalar: 0.7, ticks: 200 });
-  toast('Snapshot saved · share link copied');
+  toast('Photo card saved!');
 }
-['#btnShare', '#btnShare2'].forEach(s => $(s).addEventListener('click', sealAndShare));
+$('#btnDownloadCard').addEventListener('click', downloadPhotoCard);
 
 /* =========================================================
    MUTE, INTRO, ENTRANCE
