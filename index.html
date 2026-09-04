@@ -297,11 +297,11 @@
     <div class="name-grid">
       <div>
         <div class="lbl" style="margin-top:0">To / Recipient</div>
-        <input type="text" id="recipientInput" class="input-gold" placeholder="e.g. Marga" maxlength="40" spellcheck="false" />
+        <input type="text" id="recipientInput" class="input-gold" placeholder="Their name (optional)" maxlength="40" spellcheck="false" />
       </div>
       <div>
         <div class="lbl" style="margin-top:0">From / Your Name</div>
-        <input type="text" id="senderInput" class="input-gold" placeholder="e.g. Dave" maxlength="40" spellcheck="false" />
+        <input type="text" id="senderInput" class="input-gold" placeholder="Your name (optional)" maxlength="40" spellcheck="false" />
       </div>
     </div>
 
@@ -330,7 +330,7 @@
       <i data-lucide="heart" style="width:26px;height:26px"></i>
     </div>
     <h3 id="shareModalTitle" style="margin:0 0 6px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:1.85rem;color:var(--gold-2)">Your Letter is Ready!</h3>
-    <p id="shareModalDesc" style="font-size:0.86rem;opacity:0.85;margin:0 0 16px;line-height:1.5">Send this link to <strong id="shareRecipientName" style="color:var(--gold-2)">Marga</strong>. When opened, your personalized 3D rose and letter will unfold.</p>
+    <p id="shareModalDesc" style="font-size:0.86rem;opacity:0.85;margin:0 0 16px;line-height:1.5">Send this link to someone special. When opened, your 3D rose and letter will unfold.</p>
     
     <div class="share-link-box">
       <input type="text" id="shareLinkInput" readonly value="" />
@@ -1176,7 +1176,13 @@ const FONTS = [
   { name: 'Pinyon Script', css: '"Pinyon Script", cursive', size: '1.68rem', style: 'normal', lh: 1.55, canvas: '36px "Pinyon Script"' },
   { name: 'Parisienne', css: '"Parisienne", cursive', size: '1.55rem', style: 'normal', lh: 1.55, canvas: '34px "Parisienne"' },
 ];
-const state = { text: ORIGINAL, to: '', from: '', font: 0, poem: 0, stage: 'sealed', written: false };
+// `authored` = this visitor created/customised the letter themselves.
+// `received` = the letter came in via a shared link (names shown, but never persisted locally).
+const state = { text: ORIGINAL, to: '', from: '', font: 0, poem: 0, stage: 'sealed', written: false, authored: false, received: false };
+// Names are only ever rendered for a real letter — never for the untouched default.
+const hasNames = () => (state.authored || state.received);
+const toName = () => (hasNames() && state.to ? state.to.trim() : '');
+const fromName = () => (hasNames() && state.from ? state.from.trim() : '');
 function escapeHtml(s){
   if (!s) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -1211,8 +1217,9 @@ function getShareableURL(){
   url.search = '';
   url.hash = '';
   const q = new URLSearchParams();
-  if (state.to) q.set('to', state.to);
-  if (state.from) q.set('from', state.from);
+  const to = toName(), from = fromName();
+  if (to) q.set('to', to);
+  if (from) q.set('from', from);
   if (state.text && state.text !== ORIGINAL) q.set('m', b64e(state.text));
   if (state.font) q.set('f', state.font);
   if (currentPreset) q.set('p', currentPreset);
@@ -1226,9 +1233,12 @@ function updateURL(){
   } catch (e){}
 }
 function saveToStorage(){
+  // Only the visitor's own letter is persisted. Letters opened from a shared
+  // link stay ephemeral so the sender's names never become this user's default.
+  if (state.received && !state.authored) return;
   try {
     localStorage.setItem('juliet_saved_letter', JSON.stringify({
-      text: state.text, to: state.to, from: state.from, font: state.font, preset: currentPreset, updatedAt: Date.now()
+      text: state.text, to: state.to, from: state.from, font: state.font, preset: currentPreset, authored: true, updatedAt: Date.now()
     }));
   } catch (e){}
 }
@@ -1239,31 +1249,34 @@ function loadFromStorage(){
     const saved = JSON.parse(raw);
     if (saved && (saved.text || saved.to || saved.from)){
       if (saved.text) state.text = saved.text;
-      if (saved.to) state.to = saved.to;
-      if (saved.from) state.from = saved.from;
       if (typeof saved.font === 'number' && saved.font < FONTS.length) state.font = saved.font;
       if (typeof saved.preset === 'number' && saved.preset < presets.length) currentPreset = saved.preset;
+      // Names are restored only for letters this user actually authored.
+      // Legacy entries (written before the `authored` flag existed) may hold a
+      // received letter's names, so they are intentionally dropped.
+      if (saved.authored === true){
+        state.authored = true;
+        if (saved.to) state.to = saved.to;
+        if (saved.from) state.from = saved.from;
+      }
       updateURL();
     }
   } catch (e){}
 }
 function updateEnvelopeDisplay(){
+  const to = toName(), from = fromName();
   const addr = $('#envAddress');
   if (addr){
-    if (state.to){
-      const fromLine = state.from ? `from ${escapeHtml(state.from)} · ` : '';
-      addr.innerHTML = `For ${escapeHtml(state.to)}<small>${fromLine}by candlelight &amp; rose</small>`;
+    if (to){
+      const fromLine = from ? `from ${escapeHtml(from)} · ` : '';
+      addr.innerHTML = `For ${escapeHtml(to)}<small>${fromLine}by candlelight &amp; rose</small>`;
     } else {
       addr.innerHTML = `For you, always<small>by candlelight &amp; rose</small>`;
     }
   }
   const sealMono = $('#sealFace .mono');
   if (sealMono){
-    if (state.to && state.to.trim().length > 0){
-      sealMono.textContent = state.to.trim()[0].toUpperCase();
-    } else {
-      sealMono.textContent = 'J';
-    }
+    sealMono.textContent = to ? to[0].toUpperCase() : 'J';
   }
 }
 function updateIntroDisplay(){
@@ -1271,14 +1284,15 @@ function updateIntroDisplay(){
   const desc = $('#introDesc');
   const btn = $('#btnBeginText');
   if (!title) return;
-  if (state.to){
-    title.textContent = `A Letter for ${state.to}`;
-    if (state.from){
-      desc.innerHTML = `Written with love by <em>${escapeHtml(state.from)}</em> · Sealed between the rose petals.<br/>Draw near, and break the seal.`;
+  const to = toName(), from = fromName();
+  if (to){
+    title.textContent = `A Letter for ${to}`;
+    if (from){
+      desc.innerHTML = `Written with love by <em>${escapeHtml(from)}</em> · Sealed between the rose petals.<br/>Draw near, and break the seal.`;
     } else {
       desc.innerHTML = `Somewhere between the petals rests a keepsake written for you alone.<br/>Draw near, and break the seal.`;
     }
-    if (btn) btn.textContent = `Open ${state.to}'s Letter`;
+    if (btn) btn.textContent = `Open ${to}'s Letter`;
   } else {
     title.textContent = 'A Letter, Sealed in Roses';
     desc.innerHTML = 'Somewhere between the petals rests a keepsake written for you alone.<br/>Draw near, and break the seal.';
@@ -1298,7 +1312,8 @@ function readURL(){
   const f = +q.get('f'); if (f >= 0 && f < FONTS.length) state.font = f;
   const l = +(q.get('l') || q.get('p')); if (l >= 0 && l < presets.length) currentPreset = l;
   if (to || from || m){
-    saveToStorage();
+    // Arrived via a shared link: show it for this visit only, don't persist it.
+    state.received = true;
   } else {
     loadFromStorage();
   }
@@ -1306,9 +1321,10 @@ function readURL(){
 function updateFloatingButton(){
   const btn = $('#floatingShareBtn');
   if (!btn) return;
-  const hasCustom = (state.to && state.to.trim().length > 0) || (state.text && state.text !== ORIGINAL) || localStorage.getItem('juliet_saved_letter');
-  if (hasCustom){
-    const label = state.to ? `Send to ${state.to} 💌` : 'Send Letter 💌';
+  // Only surfaced once the visitor has authored their own letter.
+  if (state.authored){
+    const to = toName();
+    const label = to ? `Send to ${to} 💌` : 'Send Letter 💌';
     const span = btn.querySelector('span');
     if (span) span.textContent = label;
     btn.classList.add('show');
@@ -1490,8 +1506,10 @@ FONTS.forEach((f, i) => {
 let fontBefore = 0;
 function openModal(){
   msg.value = state.text;
-  if (recipientInput) recipientInput.value = state.to || '';
-  if (senderInput) senderInput.value = state.from || '';
+  // Don't carry a received letter's names into the visitor's own draft.
+  const prefill = state.authored;
+  if (recipientInput) recipientInput.value = prefill ? (state.to || '') : '';
+  if (senderInput) senderInput.value = prefill ? (state.from || '') : '';
   fontBefore = state.font;
   modal.classList.add('on');
   if (window.lucide) lucide.createIcons();
@@ -1505,6 +1523,9 @@ function closeModal(apply){
     if (senderInput) state.from = senderInput.value.trim();
     const txt = msg.value.trim();
     if (txt) state.text = txt;
+    // The visitor has now made this letter their own.
+    state.authored = true;
+    state.received = false;
     saveToStorage();
     updateURL();
     updateEnvelopeDisplay();
@@ -1537,16 +1558,18 @@ $('#btnResetDefault').addEventListener('click', () => {
   state.to = '';
   state.from = '';
   state.font = 0;
+  state.authored = false;
+  state.received = false;
   if (recipientInput) recipientInput.value = '';
   if (senderInput) senderInput.value = '';
   msg.value = ORIGINAL;
   applyFont(0);
-  saveToStorage();
+  try { localStorage.removeItem('juliet_saved_letter'); } catch (e){}
   updateURL();
   updateEnvelopeDisplay();
   updateIntroDisplay();
   updateFloatingButton();
-  toast('Reset to default Juliet letter');
+  toast('Reset to the default letter');
 });
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(false); });
 addEventListener('keydown', e => {
@@ -1585,9 +1608,10 @@ function openShareModal(){
   $('#shareLinkInput').value = url;
   const title = $('#shareModalTitle');
   const desc = $('#shareModalDesc');
-  if (state.to){
-    title.textContent = `Sealed for ${state.to} 💌`;
-    desc.innerHTML = `Send this link to <strong style="color:var(--gold-2)">${escapeHtml(state.to)}</strong>. When opened, your personalized 3D rose and letter will unfold.`;
+  const to = toName();
+  if (to){
+    title.textContent = `Sealed for ${to} 💌`;
+    desc.innerHTML = `Send this link to <strong style="color:var(--gold-2)">${escapeHtml(to)}</strong>. When opened, your personalized 3D rose and letter will unfold.`;
   } else {
     title.textContent = 'Your Letter is Ready! 💌';
     desc.textContent = 'Send this link to someone special. When opened, your 3D rose and letter will unfold.';
@@ -1607,14 +1631,14 @@ async function copyShareLink(){
   $('#copyBtnText').textContent = '✓ Copied! Send this link in chat ❤️';
   Audio.shimmer(987.77);
   confetti({ particleCount: 50, spread: 80, origin: { y: 0.6 }, colors: ['#d4af37', '#f5e1a4', '#f7c7a3'] });
-  const recipientName = state.to ? state.to : 'your special someone';
+  const recipientName = toName() || 'your special someone';
   toast(`Link copied! Send it in chat to ${recipientName} 🌹`, 3500);
   setTimeout(() => { $('#copyBtnText').textContent = 'Copy Shareable Link'; }, 4500);
 }
 async function nativeShare(){
   const url = getShareableURL();
-  const toStr = state.to ? ` for ${state.to}` : '';
-  const fromStr = state.from ? ` from ${state.from}` : '';
+  const toStr = toName() ? ` for ${toName()}` : '';
+  const fromStr = fromName() ? ` from ${fromName()}` : '';
   if (navigator.share){
     try {
       await navigator.share({
@@ -1655,14 +1679,15 @@ async function downloadPhotoCard(){
   g.save(); g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 50; g.shadowOffsetY = 20; g.fillStyle = '#f2e6cf'; g.beginPath(); g.roundRect(cx, cy, cw, ch, 6); g.fill(); g.restore();
   const pg = g.createLinearGradient(0, cy, 0, cy + ch); pg.addColorStop(0, 'rgba(255,255,255,.35)'); pg.addColorStop(1, 'rgba(120,80,30,.12)'); g.fillStyle = pg; g.fillRect(cx, cy, cw, ch);
   g.save(); g.beginPath(); g.rect(cx, cy, cw, ch); g.clip(); g.fillStyle = '#3b2a1c'; g.font = f.canvas; g.textBaseline = 'top';
-  if (state.to) { g.font = 'italic 22px "Cormorant Garamond"'; g.fillText(`For ${state.to}`, cx + pad, cy + 20); }
+  const cardTo = toName();
+  if (cardTo) { g.font = 'italic 22px "Cormorant Garamond"'; g.fillText(`For ${cardTo}`, cx + pad, cy + 20); }
   g.font = f.canvas;
-  const startY = state.to ? cy + pad + 24 : cy + pad;
+  const startY = cardTo ? cy + pad + 24 : cy + pad;
   lines.forEach((ln, i) => g.fillText(ln, cx + pad, startY + i * lh)); g.restore();
   g.fillStyle = 'rgba(138,95,18,.8)'; g.font = '26px "Pinyon Script"'; g.fillText('❦', cx + cw - 50, cy + 18);
   g.fillStyle = '#f3dc95'; g.font = '300 18px Jost'; g.textAlign = 'left'; g.fillText('SEALED WITH ROSES  ·  ' + new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase(), 60, H - 60);
   g.font = '72px "Pinyon Script"'; g.fillText('Juliet', 60, H - 150);
-  const fileName = state.to ? `letter-for-${state.to.toLowerCase().replace(/[^a-z0-9]/g, '-')}.png` : 'juliet-rose-letter.png';
+  const fileName = cardTo ? `letter-for-${cardTo.toLowerCase().replace(/[^a-z0-9]/g, '-')}.png` : 'juliet-rose-letter.png';
   await new Promise(res => c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = fileName; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); res(); }, 400); }, 'image/png'));
   confetti({ particleCount: 60, spread: 100, origin: { y: 0.65 }, colors: ['#d4af37', '#f5e1a4', '#f7c7a3', '#ffffff'], scalar: 0.7, ticks: 200 });
   toast('Photo card saved!');
