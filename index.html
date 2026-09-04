@@ -743,6 +743,30 @@ const dewMat = new THREE.ShaderMaterial({
 });
 
 /* ---------- Bouquet ---------- */
+// Merge a list of non-indexed-or-indexed BufferGeometries sharing one material
+// into a single geometry, so many thin tubes cost one draw call instead of N.
+function mergeGeos(list){
+  let vTotal = 0, iTotal = 0;
+  for (const g of list){ vTotal += g.attributes.position.count; iTotal += g.index ? g.index.count : g.attributes.position.count; }
+  const pos = new Float32Array(vTotal * 3), nor = new Float32Array(vTotal * 3);
+  const idx = vTotal > 65535 ? new Uint32Array(iTotal) : new Uint16Array(iTotal);
+  let vo = 0, io = 0;
+  for (const g of list){
+    const p = g.attributes.position, n = g.attributes.normal;
+    pos.set(p.array.subarray(0, p.count * 3), vo * 3);
+    if (n) nor.set(n.array.subarray(0, n.count * 3), vo * 3);
+    if (g.index){ const gi = g.index.array; for (let k = 0; k < gi.length; k++) idx[io++] = gi[k] + vo; }
+    else { for (let k = 0; k < p.count; k++) idx[io++] = k + vo; }
+    vo += p.count;
+    g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  out.computeBoundingSphere();
+  return out;
+}
 const bouquet = new THREE.Group(); scene.add(bouquet);
 const roses = [], roseProxies = [];
 const PETALS = isMobile ? 84 : 96;
@@ -760,6 +784,7 @@ const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.
 const thornGeo = new THREE.ConeGeometry(0.018, 0.075, 5); thornGeo.translate(0, 0.037, 0);
 const thornMat = new THREE.MeshStandardMaterial({ color: 0x5a4a2a, roughness: 0.6 });
 const thornMatrices = [];
+const stemGeos = [];
 const dummy = new THREE.Object3D();
 const UP = new THREE.Vector3(0, 1, 0);
 const roseRoot = new THREE.Vector3(0, -2.2, 0);
@@ -797,16 +822,32 @@ headDefs.forEach((h, i) => {
   const calyx = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 7), calyxMat); calyx.position.set(0, -0.06, 0); calyx.rotation.x = Math.PI; rose.add(calyx);
   const hip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), calyxMat); hip.position.set(0, -0.2, 0); rose.add(hip);
   for (let s = 0; s < 5; s++){ const sep = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.34, 4), calyxMat); const a = s / 5 * Math.PI * 2; sep.position.set(Math.cos(a) * 0.2, 0.02, Math.sin(a) * 0.2); sep.lookAt(Math.cos(a) * 1.4, 0.9, Math.sin(a) * 1.4); sep.rotateX(Math.PI / 2); rose.add(sep); }
-  // stem
+  // Stem — a hand-gathered bouquet crosses its stems through the binding point
+  // rather than radiating as straight spokes. Each stem is given a tangential
+  // swirl that reverses sign below the tie, so stems lean one way in the
+  // gather and the opposite way in the tail, crisscrossing near the ribbon.
   const hx = head.x, hz = head.z; const rr = Math.hypot(hx, hz) || 1; const nx = hx / rr, nz = hz / rr;
+  // Perpendicular (tangential) direction in the XZ plane.
+  const tx = -nz, tz = nx;
+  const swirl = (rand() - 0.5) * 0.34;          // per-stem lean, both directions
+  const cross = (i % 2 ? 1 : -1) * (0.16 + rand() * 0.12); // alternating crossover
+  const wob = 0.05 + rand() * 0.05;             // mid-stem bow amplitude
   const pts = [
-    new THREE.Vector3(nx * 0.32 + (rand() - 0.5) * 0.15, -3.0, nz * 0.32 + (rand() - 0.5) * 0.15),
-    new THREE.Vector3(nx * 0.12 * rr * 0.4, -1.0, nz * 0.12 * rr * 0.4),
-    new THREE.Vector3(hx * 0.55, 0.1 + (rand() - 0.5) * 0.2, hz * 0.55),
+    // Cut end, splayed below the tie and kicked tangentially the OPPOSITE way
+    // from the gather — this is what produces the crossed tail under the wrap.
+    new THREE.Vector3(nx * 0.36 + tx * -cross * 1.5 + (rand() - 0.5) * 0.12, -3.0, nz * 0.36 + tz * -cross * 1.5 + (rand() - 0.5) * 0.12),
+    // Just under the ribbon: pulled tight toward the axis, slight cross lean.
+    new THREE.Vector3(nx * 0.10 + tx * -cross * 0.5, -1.32, nz * 0.10 + tz * -cross * 0.5),
+    // The binding point: all stems converge into a narrow neck.
+    new THREE.Vector3(nx * 0.06 + tx * cross * 0.25, -0.95, nz * 0.06 + tz * cross * 0.25),
+    // Opening out through the gather, bowing tangentially.
+    new THREE.Vector3(hx * 0.34 + tx * (swirl + wob), -0.15 + (rand() - 0.5) * 0.16, hz * 0.34 + tz * (swirl + wob)),
+    // Approaching the head, easing back toward the bloom axis.
+    new THREE.Vector3(hx * 0.72 + tx * swirl * 0.55, 0.62 + (rand() - 0.5) * 0.18, hz * 0.72 + tz * swirl * 0.55),
     head.clone().addScaledVector(dir, -0.12 * h.s - 0.02)
   ];
-  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.6);
-  const stem = new THREE.Mesh(new THREE.TubeGeometry(curve, 28, 0.03, 7, false), stemMat); bouquet.add(stem);
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+  { const sg = new THREE.TubeGeometry(curve, 30, 0.03, 7, false); sg.deleteAttribute('uv'); stemGeos.push(sg); }
   for (let k = 0; k < 6; k++){
     const t = 0.08 + rand() * 0.62; const p = curve.getPointAt(t), tan = curve.getTangentAt(t);
     const ang = rand() * Math.PI * 2; const perp = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)).sub(tan.clone().multiplyScalar(tan.dot(new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang))))).normalize();
@@ -814,6 +855,7 @@ headDefs.forEach((h, i) => {
     thornMatrices.push(dummy.matrix.clone());
   }
 });
+bouquet.add(new THREE.Mesh(mergeGeos(stemGeos), stemMat));
 const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length); thornMatrices.forEach((m, i) => thorns.setMatrixAt(i, m)); bouquet.add(thorns);
 
 /* ---------- Eucalyptus ---------- */
@@ -824,13 +866,21 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x5f8b72, roughness: 0.68, metalness: 0.08, side: THREE.DoubleSide });
   const branchMat = new THREE.MeshStandardMaterial({ color: 0x6b6a4a, roughness: 0.8 });
   const leafMats = [], leafCols = [];
-  const EUC_BRANCHES = 7;
+  // Branch tubes are collected and merged into one mesh at the end: with 29
+  // sprigs a separate mesh each would add 29 draw calls for very little pixels.
+  const branchGeos = [];
+  const addBranch = (curve, seg, rad, radSeg) => {
+    const g = new THREE.TubeGeometry(curve, seg, rad, radSeg, false);
+    g.deleteAttribute('uv'); branchGeos.push(g);
+  };
+  // Outer eucalyptus sprays that frame the silhouette.
+  const EUC_BRANCHES = isMobile ? 9 : 13;
   for (let b = 0; b < EUC_BRANCHES; b++){
     const a = b / EUC_BRANCHES * Math.PI * 2 + 0.55 + (rand() - 0.5) * 0.4; const cx = Math.cos(a), cz = Math.sin(a);
     const reach = 1.55 + rand() * 0.5, top = 0.7 + rand() * 0.9;
     const pts = [new THREE.Vector3(cx * 0.1, -1.6, cz * 0.1), new THREE.Vector3(cx * 0.8, -0.2, cz * 0.8), new THREE.Vector3(cx * reach, top, cz * reach)];
     const curve = new THREE.CatmullRomCurve3(pts);
-    bouquet.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 14, 0.013, 5), branchMat));
+    addBranch(curve, 14, 0.013, 5);
     for (let t = 0.32; t <= 1.0; t += 0.085){
       const p = curve.getPointAt(Math.min(t, 1)), tan = curve.getTangentAt(Math.min(t, 1));
       const side = (Math.round(t / 0.085) % 2 ? 1 : -1);
@@ -842,9 +892,86 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
       leafMats.push(dummy.matrix.clone()); leafCols.push(new THREE.Color().setHSL(0.4 + rand() * 0.06, 0.22 + rand() * 0.14, 0.4 + rand() * 0.14));
     }
   }
+  // Inner collar foliage. Short, steeply-angled sprigs packed around the neck
+  // of the gather (y roughly -0.9 .. 0.5) where the bare stems are otherwise
+  // visible. These sit below the rose heads, so they fill the void without
+  // competing with the blooms.
+  const INNER_SPRIGS = isMobile ? 10 : 16;
+  for (let b = 0; b < INNER_SPRIGS; b++){
+    const a = b / INNER_SPRIGS * Math.PI * 2 + rand() * 0.6; const cx = Math.cos(a), cz = Math.sin(a);
+    const reach = 0.55 + rand() * 0.42, top = 0.15 + rand() * 0.5;
+    const pts = [new THREE.Vector3(cx * 0.07, -1.15, cz * 0.07), new THREE.Vector3(cx * reach * 0.6, -0.5 + rand() * 0.2, cz * reach * 0.6), new THREE.Vector3(cx * reach, top, cz * reach)];
+    const curve = new THREE.CatmullRomCurve3(pts);
+    addBranch(curve, 10, 0.011, 5);
+    for (let t = 0.22; t <= 1.0; t += 0.115){
+      const p = curve.getPointAt(Math.min(t, 1)), tan = curve.getTangentAt(Math.min(t, 1));
+      const side = (Math.round(t / 0.115) % 2 ? 1 : -1);
+      const sideV = new THREE.Vector3(-cz, 0, cx).multiplyScalar(side);
+      const r = 0.085 + rand() * 0.055;
+      dummy.position.copy(p).addScaledVector(sideV, r * 0.85).addScaledVector(tan, 0.015);
+      dummy.lookAt(dummy.position.clone().add(new THREE.Vector3(cx * 0.5 + sideV.x * 0.4, 0.55 + (rand() - 0.5) * 0.5, cz * 0.5 + sideV.z * 0.4)));
+      dummy.rotateZ(rand() * Math.PI); dummy.scale.setScalar(r); dummy.updateMatrix();
+      leafMats.push(dummy.matrix.clone()); leafCols.push(new THREE.Color().setHSL(0.38 + rand() * 0.06, 0.20 + rand() * 0.14, 0.30 + rand() * 0.12));
+    }
+  }
   const leaves = new THREE.InstancedMesh(leafGeo, leafMat, leafMats.length);
   leafMats.forEach((m, i) => { leaves.setMatrixAt(i, m); leaves.setColorAt(i, leafCols[i]); });
   bouquet.add(leaves);
+  bouquet.add(new THREE.Mesh(mergeGeos(branchGeos), branchMat));
+}
+
+/* ---------- Secondary buds (unopened blooms deep in the gather) ---------- */
+{
+  const rand = mulberry32(9091);
+  // Teardrop bud: a sphere squashed and drawn to a point at the tip.
+  const budGeo = new THREE.SphereGeometry(1, 9, 8);
+  { const pa = budGeo.attributes.position;
+    for (let i = 0; i < pa.count; i++){
+      const y = pa.getY(i), k = (y + 1) * 0.5;             // 0 at base, 1 at tip
+      const taper = 0.62 + 0.38 * Math.pow(1 - k, 0.7);     // narrow toward tip
+      pa.setX(i, pa.getX(i) * taper); pa.setZ(i, pa.getZ(i) * taper);
+      pa.setY(i, y * 1.32 + 0.18);
+    }
+    budGeo.computeVertexNormals(); }
+  const budMat = new THREE.MeshStandardMaterial({ color: 0xf6cfae, roughness: 0.62, metalness: 0.0, emissive: 0x2a1008, emissiveIntensity: 0.18 });
+  const sepMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
+  const stemBud = new THREE.MeshStandardMaterial({ color: 0x44703c, roughness: 0.75 });
+  const budStemGeos = [], budMats = [], sepMats = [];
+  const N_BUDS = isMobile ? 5 : 8;
+  for (let i = 0; i < N_BUDS; i++){
+    const a = i / N_BUDS * Math.PI * 2 + 0.42 + (rand() - 0.5) * 0.35;
+    const r = 0.42 + rand() * 0.34;
+    const y = 0.42 + rand() * 0.46;              // below the rose heads (lowest is 1.18)
+    const s = 0.11 + rand() * 0.05;
+    const tip = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+    const dir = tip.clone().sub(new THREE.Vector3(0, -1.0, 0)).normalize();
+    dummy.position.copy(tip); dummy.quaternion.setFromUnitVectors(UP, dir);
+    dummy.scale.setScalar(s); dummy.updateMatrix();
+    budMats.push(dummy.matrix.clone());
+    // sepals hugging the bud, transformed into bouquet space
+    const budM = dummy.matrix.clone();
+    for (let k = 0; k < 3; k++){
+      const sa = k / 3 * Math.PI * 2 + rand();
+      dummy.position.set(Math.cos(sa) * 0.6, -1.2, Math.sin(sa) * 0.6);
+      dummy.rotation.set(0.5, sa, 0);
+      dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+      sepMats.push(budM.clone().multiply(dummy.matrix));
+    }
+    // short stem from the neck of the gather up to the bud
+    const bpts = [
+      new THREE.Vector3(Math.cos(a) * 0.05, -1.05, Math.sin(a) * 0.05),
+      new THREE.Vector3(Math.cos(a) * r * 0.55, y * 0.3 - 0.35, Math.sin(a) * r * 0.55),
+      tip.clone().addScaledVector(dir, -0.12)
+    ];
+    const bg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(bpts), 12, 0.015, 5);
+    bg.deleteAttribute('uv'); budStemGeos.push(bg);
+  }
+  bouquet.add(new THREE.Mesh(mergeGeos(budStemGeos), stemBud));
+  const budIM = new THREE.InstancedMesh(budGeo, budMat, budMats.length);
+  budMats.forEach((m, i) => budIM.setMatrixAt(i, m)); bouquet.add(budIM);
+  const sepGeo = new THREE.ConeGeometry(0.026, 0.2, 4);
+  const sepIM = new THREE.InstancedMesh(sepGeo, sepMat, sepMats.length);
+  sepMats.forEach((m, i) => sepIM.setMatrixAt(i, m)); bouquet.add(sepIM);
 }
 
 /* ---------- Baby's breath ---------- */
@@ -853,14 +980,44 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   const bbGeo = new THREE.SphereGeometry(1, 7, 6);
   const bbMat = new THREE.MeshStandardMaterial({ color: 0xfff8ee, roughness: 0.9, emissive: 0xfff1dc, emissiveIntensity: 0.22 });
   const stemThin = new THREE.MeshStandardMaterial({ color: 0x7d8f5a, roughness: 0.85 });
-  const mats = [];
-  const BB_SPRIGS = 7;
+  const mats = [], bbStemGeos = [];
+  // Emit sprigs from the ANGULAR GAPS between rose heads rather than at fixed
+  // intervals, so the clusters rise between blooms instead of clipping through
+  // petals. Ring 1 sits at angle 0.3 + k*60deg and ring 2 at 0.3 + 30 + k*60deg,
+  // so both rings share a 30deg lattice; the midpoints of that lattice (offset
+  // by 15deg) are the true gaps. Each cluster centre is then pushed away from
+  // the nearest head if it still lands too close.
+  const heads = headDefs.map(h => new THREE.Vector3(...h.p));
+  const headR = headDefs.map(h => h.s * 0.769); // true petal extent
+  const BB_SPRIGS = isMobile ? 8 : 12;
   for (let s = 0; s < BB_SPRIGS; s++){
-    const a = s / BB_SPRIGS * Math.PI * 2 + 1.1 + (rand() - 0.5) * 0.5; const cx = Math.cos(a), cz = Math.sin(a);
-    const reach = 1.1 + rand() * 0.8, top = 1.5 + rand() * 0.9;
-    const end = new THREE.Vector3(cx * reach, top, cz * reach);
-    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(cx * 0.05, -1.4, cz * 0.05), new THREE.Vector3(cx * reach * 0.5, top * 0.35, cz * reach * 0.5), end]);
-    bouquet.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 10, 0.008, 4), stemThin));
+    const a = 0.3 + (s + 0.5) * (Math.PI / 6) + (rand() - 0.5) * 0.12;
+    const cx = Math.cos(a), cz = Math.sin(a);
+    const reach = 1.15 + rand() * 0.75, top = 1.62 + rand() * 0.95;
+    let end = new THREE.Vector3(cx * reach, top, cz * reach);
+    // Push the cluster centre out of any rose head it would intersect.
+    const CLUSTER = 0.34; // cluster half-extent used when testing overlap
+    for (let iter = 0; iter < 12; iter++){
+      let worst = -1, wi = -1;
+      for (let k = 0; k < heads.length; k++){
+        const need = headR[k] + CLUSTER;
+        const d = end.distanceTo(heads[k]);
+        if (need - d > worst){ worst = need - d; wi = k; }
+      }
+      if (worst <= 0) break;
+      // move directly away from the offending bloom, mostly upward/outward
+      const push = end.clone().sub(heads[wi]);
+      if (push.lengthSq() < 1e-6) push.set(cx, 1, cz);
+      push.normalize().multiplyScalar(worst + 0.03);
+      end.add(push);
+      if (end.y < 1.2) end.y = 1.2; // keep sprigs in the upper canopy
+    }
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(cx * 0.05, -1.4, cz * 0.05),
+      new THREE.Vector3(cx * reach * 0.5, top * 0.35, cz * reach * 0.5),
+      end
+    ]);
+    { const tg = new THREE.TubeGeometry(curve, 10, 0.008, 4); tg.deleteAttribute('uv'); bbStemGeos.push(tg); }
     const n = 16 + (rand() * 10) | 0;
     for (let i = 0; i < n; i++){
       const th = rand() * Math.PI * 2, ph = Math.acos(2 * rand() - 1), rr = 0.12 + rand() * 0.22;
@@ -869,21 +1026,99 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
     }
   }
   const bb = new THREE.InstancedMesh(bbGeo, bbMat, mats.length); mats.forEach((m, i) => bb.setMatrixAt(i, m)); bouquet.add(bb);
+  bouquet.add(new THREE.Mesh(mergeGeos(bbStemGeos), stemThin));
 }
 
 /* ---------- Ribbon ---------- */
 {
-  const satin = new THREE.MeshStandardMaterial({ color: 0xf1dcc5, roughness: 0.38, metalness: 0.05 });
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.06, 10, 40), satin); band.position.set(0, -1.05, 0); band.rotation.x = Math.PI / 2; band.scale.set(1, 1, 1.3); bouquet.add(band);
-  const band2 = band.clone(); band2.position.y = -1.22; band2.scale.set(1.02, 1.02, 1.3); bouquet.add(band2);
-  const loopL = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.045, 8, 30), satin); loopL.position.set(-0.4, -1.1, 0.28); loopL.rotation.set(0.4, 0.6, 0.3); loopL.scale.set(1.5, 1, 1); bouquet.add(loopL);
-  const loopR = loopL.clone(); loopR.position.set(0.4, -1.12, 0.28); loopR.rotation.set(0.4, -0.6, -0.3); bouquet.add(loopR);
-  const knot = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), satin); knot.position.set(0, -1.12, 0.36); knot.scale.set(1.3, 1, 0.8); bouquet.add(knot);
-  const tailGeo = new THREE.PlaneGeometry(0.12, 1.1, 1, 12);
-  { const pa = tailGeo.attributes.position; for (let i = 0; i < pa.count; i++){ const y = pa.getY(i); pa.setZ(i, Math.sin(y * 5) * 0.06); pa.setX(i, pa.getX(i) * (1 + (0.55 - y) * 0.3)); } tailGeo.computeVertexNormals(); }
-  const tailMat = satin.clone(); tailMat.side = THREE.DoubleSide;
-  const t1 = new THREE.Mesh(tailGeo, tailMat); t1.position.set(-0.12, -1.7, 0.36); t1.rotation.set(0.15, 0, 0.18); bouquet.add(t1);
-  const t2 = new THREE.Mesh(tailGeo, tailMat); t2.position.set(0.14, -1.75, 0.34); t2.rotation.set(0.1, 0, -0.14); bouquet.add(t2);
+  const satin = new THREE.MeshStandardMaterial({ color: 0xf1dcc5, roughness: 0.38, metalness: 0.05, side: THREE.DoubleSide });
+
+  // A flat satin band swept along an arbitrary curve. Unlike TubeGeometry this
+  // keeps a rectangular ribbon cross-section, and the band is banked to lie
+  // flat against the surface it wraps.
+  function ribbonBand(curve, segs, width, thick, bank){
+    const pos = [], nor = [], uv = [], idx = [];
+    const up = new THREE.Vector3(0, 1, 0);
+    const T = new THREE.Vector3(), N = new THREE.Vector3(), B = new THREE.Vector3(), pt = new THREE.Vector3();
+    for (let i = 0; i <= segs; i++){
+      const t = i / segs;
+      curve.getPointAt(t, pt); curve.getTangentAt(t, T);
+      // Binormal points outward from the vertical axis (the stem bundle).
+      N.set(pt.x, 0, pt.z); if (N.lengthSq() < 1e-8) N.copy(up); N.normalize();
+      B.crossVectors(T, N).normalize();
+      // Bank the band so its width follows the wrap rather than standing proud.
+      const w = width * 0.5, k = bank ? bank(t) : 0;
+      const edge = B.clone().multiplyScalar(Math.cos(k)).addScaledVector(up, Math.sin(k));
+      for (let s = -1; s <= 1; s += 2){
+        const p = pt.clone().addScaledVector(edge, w * s).addScaledVector(N, thick * 0.5);
+        pos.push(p.x, p.y, p.z); nor.push(N.x, N.y, N.z); uv.push(t, (s + 1) * 0.5);
+      }
+    }
+    for (let i = 0; i < segs; i++){
+      const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+
+  // Helical cuff: the ribbon spirals down the stem bundle, overlapping itself
+  // like a real hand-tied wrap instead of sitting as two detached rings.
+  const TURNS = 3.15, CUFF_TOP = -0.92, CUFF_BOT = -1.46;
+  const cuffPts = [];
+  for (let i = 0; i <= 120; i++){
+    const t = i / 120;
+    const ang = t * Math.PI * 2 * TURNS + 0.6;
+    const y = CUFF_TOP + (CUFF_BOT - CUFF_TOP) * t;
+    // Bundle tapers slightly toward the bottom of the wrap.
+    const r = 0.30 - t * 0.055 + Math.sin(t * Math.PI) * 0.012;
+    cuffPts.push(new THREE.Vector3(Math.cos(ang) * r, y, Math.sin(ang) * r * 1.18));
+  }
+  const cuffCurve = new THREE.CatmullRomCurve3(cuffPts);
+  const cuff = new THREE.Mesh(ribbonBand(cuffCurve, 260, 0.17, 0.02, () => 1.35), satin);
+  bouquet.add(cuff);
+
+  // Knot where the wrap is tied off, on the camera-facing side.
+  const knot = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 12), satin);
+  knot.position.set(0.05, -1.2, 0.34); knot.scale.set(1.5, 1.05, 0.85);
+  knot.rotation.z = 0.3; bouquet.add(knot);
+
+  // Two soft bow loops springing from the knot.
+  for (const side of [-1, 1]){
+    const loopPts = [];
+    for (let i = 0; i <= 40; i++){
+      const t = i / 40, ang = t * Math.PI * 2;
+      // teardrop loop lying mostly in front of the wrap
+      const lx = Math.sin(ang) * 0.20 * side;
+      const ly = (1 - Math.cos(ang)) * 0.13 - Math.sin(t * Math.PI) * 0.05;
+      const lz = Math.sin(ang * 0.5) * 0.11;
+      loopPts.push(new THREE.Vector3(0.05 + lx * (0.6 + t * 0.5), -1.2 + ly, 0.34 + lz));
+    }
+    const loop = new THREE.Mesh(ribbonBand(new THREE.CatmullRomCurve3(loopPts), 90, 0.12, 0.015, (t) => Math.sin(t * Math.PI) * 0.8), satin);
+    bouquet.add(loop);
+  }
+
+  // Drooping tails: gravity-curved streamers with a gentle twist and a
+  // notched V cut at the end, falling from the knot past the cut stems.
+  function tail(x0, z0, lean, len, twist){
+    const pts = [];
+    for (let i = 0; i <= 24; i++){
+      const t = i / 24;
+      // accelerating downward fall with a lateral sway
+      const y = -1.2 - len * Math.pow(t, 1.15);
+      const sway = Math.sin(t * 2.6 + lean) * 0.14 * t + lean * 0.16 * t;
+      pts.push(new THREE.Vector3(x0 + sway, y, z0 + Math.sin(t * 3.1) * 0.06 + t * 0.05));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const g = ribbonBand(curve, 80, 0.13, 0.012, (t) => Math.sin(t * Math.PI * 1.4 + twist) * 1.1);
+    return new THREE.Mesh(g, satin);
+  }
+  bouquet.add(tail(-0.02, 0.33, -0.55, 0.95, 0.2));
+  bouquet.add(tail(0.12, 0.31, 0.65, 1.18, 1.1));
 }
 
 /* ---------- Ground contact shadow ---------- */
