@@ -203,6 +203,26 @@
   .btn-share-primary:hover{transform:translateY(-2px);box-shadow:0 16px 45px rgba(212,175,55,.5)}
   .btn-share-secondary{width:100%;display:inline-flex;justify-content:center;align-items:center;gap:10px;padding:12px 18px;border-radius:999px;font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);transition:all .3s}
   .btn-share-secondary:hover{background:rgba(255,255,255,.14)}
+
+  /* ---------- Floating Send Button ---------- */
+  #floatingShareBtn{
+    position:fixed;top:clamp(16px,3vh,36px);right:clamp(16px,3vw,44px);z-index:35;
+    display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;
+    font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;font-weight:500;
+    color:#2a1a08;background:linear-gradient(135deg,#f6e3a6,#d4af37 55%,#b8860b);
+    box-shadow:0 8px 30px rgba(212,175,55,.45),0 0 15px rgba(243,220,149,.3);
+    border:1px solid rgba(255,255,255,.6);cursor:pointer;
+    transition:all .35s cubic-bezier(.2,.8,.2,1);animation:pulseGlow 2.5s ease-in-out infinite;
+    opacity:0;pointer-events:none;transform:translateY(-8px);
+  }
+  #floatingShareBtn.show{opacity:1;pointer-events:auto;transform:translateY(0)}
+  #floatingShareBtn:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 12px 35px rgba(212,175,55,.6),0 0 20px rgba(243,220,149,.4)}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 6px 24px rgba(212,175,55,.35)}50%{box-shadow:0 10px 36px rgba(212,175,55,.6),0 0 18px rgba(243,220,149,.5)}}
+  @media (max-width:768px){
+    #floatingShareBtn{top:auto;bottom:calc(76px + env(safe-area-inset-bottom));left:50%;right:auto;transform:translateX(-50%) translateY(8px)}
+    #floatingShareBtn.show{transform:translateX(-50%) translateY(0)}
+    #floatingShareBtn:hover{transform:translateX(-50%) translateY(-2px)}
+  }
 </style>
 </head>
 <body>
@@ -213,6 +233,7 @@
 
 <div id="brand"><h1>Juliet</h1><p>An unfolding love letter</p></div>
 <div id="hint">Drag to orbit · Scroll to draw near<br/>Touch a rose · Break the seal</div>
+<button id="floatingShareBtn" aria-label="Send letter"><i data-lucide="send"></i><span>Send Letter</span></button>
 
 <!-- Envelope -->
 <div id="envWrap">
@@ -1282,8 +1303,22 @@ function readURL(){
     loadFromStorage();
   }
 }
+function updateFloatingButton(){
+  const btn = $('#floatingShareBtn');
+  if (!btn) return;
+  const hasCustom = (state.to && state.to.trim().length > 0) || (state.text && state.text !== ORIGINAL) || localStorage.getItem('juliet_saved_letter');
+  if (hasCustom){
+    const label = state.to ? `Send to ${state.to} 💌` : 'Send Letter 💌';
+    const span = btn.querySelector('span');
+    if (span) span.textContent = label;
+    btn.classList.add('show');
+    if (window.lucide) lucide.createIcons();
+  } else {
+    btn.classList.remove('show');
+  }
+}
 readURL(); applyFont(state.font); applyPreset(currentPreset, 0.01);
-updateEnvelopeDisplay(); updateIntroDisplay();
+updateEnvelopeDisplay(); updateIntroDisplay(); updateFloatingButton();
 
 /* =========================================================
    CALLIGRAPHY WRITER
@@ -1474,6 +1509,7 @@ function closeModal(apply){
     updateURL();
     updateEnvelopeDisplay();
     updateIntroDisplay();
+    updateFloatingButton();
     if (state.stage === 'reading'){
       writeToken++;
       gsap.to(ink, { opacity: 0, duration: 0.35, onComplete: () => {
@@ -1509,6 +1545,7 @@ $('#btnResetDefault').addEventListener('click', () => {
   updateURL();
   updateEnvelopeDisplay();
   updateIntroDisplay();
+  updateFloatingButton();
   toast('Reset to default Juliet letter');
 });
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(false); });
@@ -1596,7 +1633,7 @@ $('#btnCopyLinkMain').addEventListener('click', copyShareLink);
 $('#btnNativeShare').addEventListener('click', nativeShare);
 $('#btnCloseShareModal').addEventListener('click', closeShareModal);
 shareModal.addEventListener('click', e => { if (e.target === shareModal) closeShareModal(); });
-['#btnShare', '#btnShare2'].forEach(s => $(s).addEventListener('click', openShareModal));
+['#btnShare', '#btnShare2', '#floatingShareBtn'].forEach(s => $(s) && $(s).addEventListener('click', openShareModal));
 
 /* =========================================================
    PHOTO CARD GENERATOR (Keepsake Snapshot)
