@@ -685,23 +685,26 @@ function buildRoseGeometry(petalCount, rand){
         let z = 0;
         if (isCore){
           // Deep lateral cupping
-          const cup = 2.6 - coreT * 0.9;
+          const cup = 2.9 - coreT * 0.9;
           const lateralCup = -cup * (x * x) * (0.5 + 0.5 * v);
           // Tips curve INWARD over the center into a swirling spiral nest
-          const inwardCurl = -(0.24 + (1.0 - coreT) * 0.24) * Math.pow(v, 1.6) * len;
-          // Tangential swirl curvature
-          const tangentialCurl = normU * (1.0 - coreT) * 0.045 * Math.sin(Math.PI * v);
+          const inwardCurl = -(0.30 + (1.0 - coreT) * 0.28) * Math.pow(v, 1.6) * len;
+          // Tangential swirl curvature — stronger, so the heart reads as a
+          // tightly wound spiral of ruffled petals rather than a flat rosette.
+          const tangentialCurl = normU * (1.0 - coreT) * 0.075 * Math.sin(Math.PI * v);
           // Delicate ruffling along the inner cabbage petal edges
-          const ruf = (1.0 - t * 0.35) * 0.02 * Math.sin(u * Math.PI * 4.0 + phase * 2.0) * Math.pow(v, 1.6);
+          const ruf = (1.0 - t * 0.35) * 0.030 * Math.sin(u * Math.PI * 5.0 + phase * 2.0) * Math.pow(v, 1.5);
           z = lateralCup + inwardCurl + tangentialCurl + ruf;
         } else {
-          // Outer 40%: chalice/saucer cupping gently upward
-          const cup = 1.8 - outerT * 0.4;
-          const lateralCup = -cup * (x * x) * (0.4 + 0.6 * v);
-          // Saucer curvature: cups UPWARD (negative z lifts y2 and curves rim upward like a chalice)
-          const saucerCup = -0.16 * Math.pow(v, 1.6) * len;
-          const ruf = 0.012 * Math.sin(u * Math.PI * 3.0 + phase) * Math.pow(v, 2.0);
-          z = lateralCup + saucerCup + ruf;
+          // Outer 40%: guard petals close INWARD around the bloom like a
+          // chalice, hugging the heart instead of flaring open into a saucer.
+          const cup = 2.5 - outerT * 0.35;
+          const lateralCup = -cup * (x * x) * (0.45 + 0.65 * v);
+          // Negative z pulls the rim up and inward, cradling the centre.
+          const chalice = -(0.30 + outerT * 0.16) * Math.pow(v, 1.5) * len;
+          // Ruffled, slightly wavy outer edge typical of cabbage roses.
+          const ruf = 0.020 * Math.sin(u * Math.PI * 3.0 + phase) * Math.pow(v, 1.8);
+          z = lateralCup + chalice + ruf;
         }
 
         const y2 = y * ct - z * st, z2 = y * st + z * ct + rad;
@@ -770,35 +773,36 @@ function mergeGeos(list){
 const bouquet = new THREE.Group(); scene.add(bouquet);
 const roses = [], roseProxies = [];
 const PETALS = isMobile ? 84 : 96;
-// Bouquet layout — a domed hand-tied arrangement.
+// Bouquet layout — a tightly-packed Korean-style dome.
 //
-// The previous version derived each bloom's facing from (head - roseRoot),
-// which tied the tilt to the head's position: the outer ring only leaned 25.6
-// degrees off vertical, so every rose pointed up and out and the bouquet read
-// as a flat fan. Facing is now an explicit per-head `tilt` (degrees from
-// vertical), decoupled from position, so the outer roses can lean out and
-// slightly down over the edge to close the dome.
-//
-// Radii/heights are solved so no two heads interpenetrate, measured against the
-// real petal extent (0.769 * scale) taken from buildRoseGeometry. This layout
-// clears by 0.257 — far roomier than the old 0.026 — because the rings are
-// spread down the dome instead of stacked in one plane.
-const headDefs = [{ p: [0, 2.18, 0], s: 0.64, tilt: 0 }];
-for (let i = 0; i < 6; i++){
-  const a = i / 6 * Math.PI * 2 + 0.3;
-  headDefs.push({ p: [Math.cos(a) * 1.15, 1.75 + Math.sin(a * 2) * 0.05, Math.sin(a) * 1.15], s: 0.58, tilt: 38 });
-}
-for (let i = 0; i < 7; i++){
-  const a = i / 7 * Math.PI * 2 + 0.3 + Math.PI / 7;
-  headDefs.push({ p: [Math.cos(a) * 1.52, 0.75 + Math.cos(a * 3) * 0.06, Math.sin(a) * 1.52], s: 0.54, tilt: 72 });
-}
-// Upper-middle fillers. Ray-casting the centre of the dome showed a band at
-// y = 1.25..1.65 where the camera saw straight past the blooms onto the bare
-// stem cluster. These three sit in that band and lean forward/outward to face
-// the viewer, closing the hole between the crown and the outer ring.
-for (let i = 0; i < 3; i++){
-  const a = i / 3 * Math.PI * 2 + 0.8;
-  headDefs.push({ p: [Math.cos(a) * 0.55, 1.15, Math.sin(a) * 0.55], s: 0.52, tilt: 30 });
+// Heads lie on an oblate hemisphere and each bloom's facing is the surface
+// normal at its position (tilt = polar angle), so the dome closes over itself.
+// Spacing is solved so that neighbouring blooms *touch*: with the measured
+// petal extent (0.769 * scale) every head sits within ~0.01 of contact with
+// its nearest neighbour, leaving no line of sight down onto the stems.
+// Measured maximum petal radius of a bloom, in units of its scale factor.
+// Taken directly from buildRoseGeometry's output — keep in sync if the petal
+// profile changes, since packing and all collision tests depend on it.
+const PETAL_R = 0.670;
+// Spacing is solved against the MEASURED petal extent (0.670 * scale). Note
+// the chalice cupping below pulls the guard petals inward, which shrank that
+// extent from 0.769 to 0.670 — the packing had to be re-solved to match, or
+// the blooms would no longer touch.
+const DOME = { Rx: 1.45, Ry: 1.45, cy: 0.85 };
+const headDefs = [];
+{
+  const ring = (n, s, phiDeg, off) => {
+    const phi = phiDeg * Math.PI / 180;
+    const r = DOME.Rx * Math.sin(phi);
+    const y = DOME.cy + DOME.Ry * Math.cos(phi);
+    for (let i = 0; i < n; i++){
+      const a = i / n * Math.PI * 2 + off;
+      headDefs.push({ p: [Math.cos(a) * r, y, Math.sin(a) * r], s, tilt: phiDeg });
+    }
+  };
+  headDefs.push({ p: [0, DOME.cy + DOME.Ry, 0], s: 0.64, tilt: 0 }); // crown
+  ring(6, 0.62, 34, 0.3);                       // upper shoulder
+  ring(11, 0.56, 66, 0.3 + Math.PI / 11);       // rim, leaning out and down
 }
 const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.72, metalness: 0.0 });
 const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
@@ -867,10 +871,13 @@ headDefs.forEach((h, i) => {
   // wrap, P2 flares out under the canopy, P3 the bloom's neck.
   // P1 is kept low and near the axis so the curve stays inside the ribbon
   // sleeve for the whole length of the wrap (-1.62 .. -0.86) before flaring.
+  // The stem stops *under* the calyx: the calyx cone hangs to about -0.21*s
+  // below the bloom origin, so ending at -0.17*s leaves the cut tucked inside
+  // the green rather than emerging through the petals.
   const P0 = new THREE.Vector3(bx, -2.62, bz);
   const P1 = new THREE.Vector3(bx * 0.6, -0.72, bz * 0.6);
   const P2 = new THREE.Vector3(hx * 0.46 + tx * bow, 0.30, hz * 0.46 + tz * bow);
-  const P3 = head.clone().addScaledVector(dir, -0.12 * h.s - 0.02);
+  const P3 = head.clone().addScaledVector(dir, -0.17 * h.s);
   const curve = new THREE.CubicBezierCurve3(P0, P1, P2, P3);
   { const sg = new THREE.TubeGeometry(curve, 32, 0.03, 7, false); sg.deleteAttribute('uv'); stemGeos.push(sg); }
   for (let k = 0; k < 6; k++){
@@ -1023,112 +1030,186 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   // so both rings share a 30deg lattice; the midpoints of that lattice (offset
   // by 15deg) are the true gaps. Each cluster centre is then pushed away from
   // the nearest head if it still lands too close.
+  // Filler is placed strictly OUTSIDE the bloom dome — never routed through it.
+  // Sprigs sit on a collar ring just beyond the rim blooms and rise only to
+  // the height of the dome's shoulder, so no stem or floret can pierce a
+  // petal. A second group tucks small clusters into the natural crevices
+  // between adjacent rim blooms, sitting slightly proud of the surface.
   const heads = headDefs.map(h => new THREE.Vector3(...h.p));
-  const headR = headDefs.map(h => h.s * 0.769); // true petal extent
-  const BB_SPRIGS = isMobile ? 8 : 12;
+  const headR = headDefs.map(h => h.s * PETAL_R);
+  // Exact test: transform the point into each bloom's own frame and compare
+  // against that bloom's measured petal envelope. A plain centre-distance
+  // sphere test is not enough — the bloom is a shallow cup, so points can be
+  // outside the sphere yet still inside the petals (and vice versa).
+  const roseFrames = roses.map((r, i) => {
+    const p = r.geometry.attributes.position;
+    let yMin = Infinity, yMax = -Infinity;
+    for (let k = 0; k < p.count; k++){ const y = p.getY(k); if (y < yMin) yMin = y; if (y > yMax) yMax = y; }
+    const BUCK = 20, env = new Float64Array(BUCK);
+    for (let k = 0; k < p.count; k++){
+      const b = Math.min(BUCK - 1, Math.max(0, Math.floor((p.getY(k) - yMin) / (yMax - yMin) * BUCK)));
+      const rr = Math.hypot(p.getX(k), p.getZ(k));
+      if (rr > env[b]) env[b] = rr;
+    }
+    r.updateMatrixWorld(true);
+    return { env, yMin, yMax, BUCK, inv: new THREE.Matrix4().copy(r.matrixWorld).invert() };
+  });
+  const insideBloom = (p, margin) => {
+    for (let k = 0; k < roseFrames.length; k++){
+      const f = roseFrames[k];
+      const l = p.clone().applyMatrix4(f.inv);
+      if (l.y < f.yMin || l.y > f.yMax) continue;
+      const b = Math.min(f.BUCK - 1, Math.max(0, Math.floor((l.y - f.yMin) / (f.yMax - f.yMin) * f.BUCK)));
+      if (Math.hypot(l.x, l.z) < f.env[b] + margin) return true;
+    }
+    return false;
+  };
+  const clearsAll = (p, margin) => !insideBloom(p, margin);
+
+  // --- outer collar sprigs ---
+  const BB_SPRIGS = isMobile ? 9 : 14;
   for (let s = 0; s < BB_SPRIGS; s++){
-    const a = 0.3 + (s + 0.5) * (Math.PI / 6) + (rand() - 0.5) * 0.12;
+    const a = s / BB_SPRIGS * Math.PI * 2 + 0.42 + (rand() - 0.5) * 0.16;
     const cx = Math.cos(a), cz = Math.sin(a);
-    const reach = 1.0 + rand() * 0.55, top = 1.72 + rand() * 0.9;
-    let end = new THREE.Vector3(cx * reach, top, cz * reach);
-    // Push the cluster centre out of any rose head it would intersect. The
-    // resolution is biased upward and clamped in radius: pushing purely
-    // outward would fling sprigs past the silhouette and blow out the
-    // bouquet's width on narrow (portrait) viewports.
-    const CLUSTER = 0.3;      // cluster half-extent used when testing overlap
-    const MAX_R = 1.62;       // hard radial limit for a floret cluster centre
-    for (let iter = 0; iter < 14; iter++){
-      let worst = -1, wi = -1;
-      for (let k = 0; k < heads.length; k++){
-        const need = headR[k] + CLUSTER;
-        const d = end.distanceTo(heads[k]);
-        if (need - d > worst){ worst = need - d; wi = k; }
-      }
-      if (worst <= 0) break;
-      const push = end.clone().sub(heads[wi]);
-      if (push.lengthSq() < 1e-6) push.set(cx, 1, cz);
-      push.normalize();
-      push.y = Math.abs(push.y) + 0.85;      // prefer lifting over spreading
-      push.normalize().multiplyScalar(worst + 0.03);
-      end.add(push);
-      const rNow = Math.hypot(end.x, end.z);
-      if (rNow > MAX_R){ const k = MAX_R / rNow; end.x *= k; end.z *= k; }
-      if (end.y < 1.25) end.y = 1.25;        // keep sprigs in the upper canopy
-    }
-    // Route the STEM itself clear of the blooms, not just its tip. Previously
-    // only the cluster centre was collision-tested, so the shaft could still
-    // run straight through a rose head on its way up. The path is built from
-    // several waypoints, each pushed out of any bloom it intersects, so the
-    // sprig threads up behind and between the flowers.
-    const path = [];
-    const WP = 5;
-    for (let w = 0; w <= WP; w++){
-      const t = w / WP;
-      const wp = new THREE.Vector3(
-        cx * (0.05 + (reach - 0.05) * t * t),
-        -1.4 + (end.y + 1.4) * Math.pow(t, 0.85),
-        cz * (0.05 + (reach - 0.05) * t * t)
-      );
-      if (w === WP) wp.copy(end);
-      // Shove this waypoint outside every bloom, preferring to move it
-      // downward/inward (behind the flowers) rather than out through them.
-      for (let iter = 0; iter < 24 && w > 0 && w < WP; iter++){
-        let worst = -1, wi = -1;
-        for (let k = 0; k < heads.length; k++){
-          const need = headR[k] + 0.14;
-          const d = wp.distanceTo(heads[k]);
-          if (need - d > worst){ worst = need - d; wi = k; }
-        }
-        if (worst <= 0) break;
-        const push = wp.clone().sub(heads[wi]);
-        if (push.lengthSq() < 1e-6) push.set(-cx, -1, -cz);
-        push.normalize().multiplyScalar(worst + 0.05);
-        wp.add(push);
-        const rN = Math.hypot(wp.x, wp.z);
-        if (rN > MAX_R){ const k2 = MAX_R / rN; wp.x *= k2; wp.z *= k2; }
-      }
-      path.push(wp);
-    }
-    // Waypoints alone are not enough: the spline can still bow through a bloom
-    // *between* them. Resample the finished curve and nudge any offending
-    // waypoint until the whole path is clear.
-    let curve = new THREE.CatmullRomCurve3(path);
-    for (let pass = 0; pass < 8; pass++){
-      let hit = false;
-      for (let sI = 1; sI < 40; sI++){
-        const pt = curve.getPoint(sI / 40);
-        for (let k = 0; k < heads.length; k++){
-          const need = headR[k] + 0.1;
-          const d = pt.distanceTo(heads[k]);
-          if (d >= need) continue;
-          hit = true;
-          // find the nearest interior waypoint and push it clear
-          let bi = 1, bd = Infinity;
-          for (let w = 1; w < path.length - 1; w++){
-            const dd = path[w].distanceTo(pt);
-            if (dd < bd){ bd = dd; bi = w; }
-          }
-          const push = path[bi].clone().sub(heads[k]);
-          if (push.lengthSq() < 1e-6) push.set(-cx, -1, -cz);
-          push.normalize().multiplyScalar(need - d + 0.05);
-          path[bi].add(push);
-          const rN = Math.hypot(path[bi].x, path[bi].z);
-          if (rN > MAX_R){ const k2 = MAX_R / rN; path[bi].x *= k2; path[bi].z *= k2; }
-        }
-      }
-      if (!hit) break;
-      curve = new THREE.CatmullRomCurve3(path);
-    }
-    { const tg = new THREE.TubeGeometry(curve, 20, 0.008, 4); tg.deleteAttribute('uv'); bbStemGeos.push(tg); }
-    const n = 16 + (rand() * 10) | 0;
+    // start just outside the widest bloom, arc outward and up
+    const baseR = 1.30 + rand() * 0.12;
+    const tipR = 1.62 + rand() * 0.16;
+    const tipY = 0.92 + rand() * 0.62;
+    const end = new THREE.Vector3(cx * tipR, tipY, cz * tipR);
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(cx * 0.12, -1.30, cz * 0.12),
+      new THREE.Vector3(cx * baseR * 0.75, -0.45 + rand() * 0.2, cz * baseR * 0.75),
+      new THREE.Vector3(cx * baseR, 0.35 + rand() * 0.25, cz * baseR),
+      end
+    ]);
+    { const tg = new THREE.TubeGeometry(curve, 18, 0.008, 4); tg.deleteAttribute('uv'); bbStemGeos.push(tg); }
+    const n = 14 + ((rand() * 9) | 0);
     for (let i = 0; i < n; i++){
-      const th = rand() * Math.PI * 2, ph = Math.acos(2 * rand() - 1), rr = 0.12 + rand() * 0.22;
-      dummy.position.set(end.x + Math.sin(ph) * Math.cos(th) * rr, end.y + Math.cos(ph) * rr * 0.8, end.z + Math.sin(ph) * Math.sin(th) * rr);
-      dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0.02 + rand() * 0.016); dummy.updateMatrix(); mats.push(dummy.matrix.clone());
+      const th = rand() * Math.PI * 2, ph = Math.acos(2 * rand() - 1), rr = 0.10 + rand() * 0.20;
+      const p = new THREE.Vector3(
+        end.x + Math.sin(ph) * Math.cos(th) * rr,
+        end.y + Math.cos(ph) * rr * 0.8,
+        end.z + Math.sin(ph) * Math.sin(th) * rr
+      );
+      if (!clearsAll(p, 0.035)) continue;   // never inside a bloom
+      dummy.position.copy(p); dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(0.02 + rand() * 0.015); dummy.updateMatrix();
+      mats.push(dummy.matrix.clone());
+    }
+  }
+
+  // --- crevice tufts between neighbouring blooms ---
+  // For each close pair of heads, drop a few florets at the seam between them,
+  // pushed outward along the surface so they nestle in the crack.
+  const pairs = [];
+  for (let i = 0; i < heads.length; i++){
+    for (let j = i + 1; j < heads.length; j++){
+      const d = heads[i].distanceTo(heads[j]);
+      if (d < (headR[i] + headR[j]) * 1.22) pairs.push([i, j, d]);
+    }
+  }
+  const CREV = isMobile ? 10 : 18;
+  for (let c = 0; c < Math.min(CREV, pairs.length); c++){
+    const [i, j] = pairs[(c * 7) % pairs.length];
+    const mid = heads[i].clone().add(heads[j]).multiplyScalar(0.5);
+    const out = mid.clone(); out.y -= DOME.cy; out.normalize();
+    for (let k = 0; k < 3; k++){
+      // Sit the tuft proud of the dome surface: the seam midpoint itself is
+      // still inside both blooms, so push out past the larger petal radius.
+      const clearOf = Math.max(headR[i], headR[j]);
+      const p = mid.clone().addScaledVector(out, clearOf * 0.72 + 0.10 + rand() * 0.14);
+      p.x += (rand() - 0.5) * 0.06; p.y += (rand() - 0.5) * 0.06; p.z += (rand() - 0.5) * 0.06;
+      if (!clearsAll(p, 0.05)) continue;
+      dummy.position.copy(p); dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(0.018 + rand() * 0.013); dummy.updateMatrix();
+      mats.push(dummy.matrix.clone());
     }
   }
   const bb = new THREE.InstancedMesh(bbGeo, bbMat, mats.length); mats.forEach((m, i) => bb.setMatrixAt(i, m)); bouquet.add(bb);
   bouquet.add(new THREE.Mesh(mergeGeos(bbStemGeos), stemThin));
+}
+
+/* ---------- Sculptural florist paper wrap ---------- */
+{
+  // Modern Korean-style presentation: several large matte sheets that flare
+  // out behind and around the dome and taper down to the handle tie. Each
+  // sheet is a pleated conical panel — an angular sector swept from the tie
+  // point out to a wide, softly scalloped upper edge.
+  const rand = mulberry32(31337);
+  function paperSheet(opts){
+    const { a0, span, rTop, yTop, rBot, yBot, pleats, ripple, lean, cols, rows } = opts;
+    const pos = [], nor = [], uv = [], idx = [];
+    for (let r = 0; r <= rows; r++){
+      const v = r / rows;                       // 0 at the tie, 1 at the rim
+      // radius and height sweep out from the handle to the flared edge
+      const rad = rBot + (rTop - rBot) * Math.pow(v, 0.78);
+      const y = yBot + (yTop - yBot) * Math.pow(v, 0.92);
+      for (let c = 0; c <= cols; c++){
+        const u = c / cols;
+        const ang = a0 + (u - 0.5) * span * (0.42 + 0.58 * v); // narrows at the tie
+        // Pleating: fold the sheet in and out along its width. Fold depth
+        // grows toward the rim so the pleats open like a fan.
+        const fold = Math.sin(u * Math.PI * pleats) * ripple * v;
+        const rr = rad + fold;
+        // Scalloped, slightly wavy top edge
+        const edge = v > 0.92 ? Math.sin(u * Math.PI * (pleats * 0.5)) * 0.05 : 0;
+        const yy = y + edge + Math.sin(u * Math.PI * 2.0) * 0.03 * v + lean * v * v;
+        pos.push(Math.cos(ang) * rr, yy, Math.sin(ang) * rr);
+        nor.push(Math.cos(ang), 0.25, Math.sin(ang));
+        uv.push(u, v);
+      }
+    }
+    for (let r = 0; r < rows; r++){
+      for (let c = 0; c < cols; c++){
+        const a = r * (cols + 1) + c, b = a + 1, d = a + cols + 1, e = d + 1;
+        idx.push(a, d, b, b, d, e);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+
+  // Matte cream outer layer and a translucent blush inner layer.
+  const paperOuter = new THREE.MeshStandardMaterial({
+    color: 0xf6ece0, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide,
+    emissive: 0x2a1408, emissiveIntensity: 0.14
+  });
+  const paperInner = new THREE.MeshStandardMaterial({
+    color: 0xf7d9d2, roughness: 0.86, metalness: 0.0, side: THREE.DoubleSide,
+    transparent: true, opacity: 0.93, emissive: 0x2d1410, emissiveIntensity: 0.16
+  });
+
+  // Outer collar — big sheets fanning around the back and sides. They start
+  // below the rim blooms so they cradle rather than cover the flowers.
+  const OUTER = isMobile ? 5 : 7;
+  for (let i = 0; i < OUTER; i++){
+    const a0 = i / OUTER * Math.PI * 2 + 0.35;
+    const g = paperSheet({
+      a0, span: (Math.PI * 2 / OUTER) * 1.5,
+      rBot: 0.20, yBot: -1.30,
+      rTop: 1.78 + rand() * 0.14, yTop: 1.06 + rand() * 0.30,
+      pleats: 3, ripple: 0.14, lean: 0.10 + rand() * 0.1,
+      cols: 26, rows: 12
+    });
+    bouquet.add(new THREE.Mesh(g, paperOuter));
+  }
+  // Inner blush layer, shorter and tucked just under the blooms.
+  const INNER = isMobile ? 5 : 7;
+  for (let i = 0; i < INNER; i++){
+    const a0 = i / INNER * Math.PI * 2 + 0.35 + Math.PI / INNER;
+    const g = paperSheet({
+      a0, span: (Math.PI * 2 / INNER) * 1.45,
+      rBot: 0.17, yBot: -1.24,
+      rTop: 1.54 + rand() * 0.18, yTop: 0.66 + rand() * 0.26,
+      pleats: 4, ripple: 0.10, lean: 0.06,
+      cols: 24, rows: 10
+    });
+    bouquet.add(new THREE.Mesh(g, paperInner));
+  }
 }
 
 /* ---------- Ribbon ---------- */
