@@ -761,6 +761,12 @@ for (let i = 0; i < MID_ROSES; i++){ const a = i / MID_ROSES * Math.PI * 2 + 1.0
 // Lower skirt blooms that close the gap above the ribbon.
 const LOW_ROSES = isMobile ? 3 : 5;
 for (let i = 0; i < LOW_ROSES; i++){ const a = i / LOW_ROSES * Math.PI * 2 - 0.15; headDefs.push({ p: [Math.cos(a) * 1.12, 0.38 + Math.cos(a * 2) * 0.08, Math.sin(a) * 1.12], s: 0.48 }); }
+// Collar blooms. Without these there is a ~1.35-unit run of bare stem between
+// the ribbon (y = -1.05) and the lowest bloom, which reads as empty sticks.
+// They sit above the ribbon and above the stem curve's y = -1.0 control point,
+// so each still grows a valid stem.
+const COLLAR_ROSES = isMobile ? 2 : 3;
+for (let i = 0; i < COLLAR_ROSES; i++){ const a = i / COLLAR_ROSES * Math.PI * 2 + 0.52; headDefs.push({ p: [Math.cos(a) * 0.62, -0.35 + (i % 2 ? 0.07 : -0.07), Math.sin(a) * 0.62], s: 0.58 }); }
 const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.72, metalness: 0.0 });
 const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
 const thornGeo = new THREE.ConeGeometry(0.018, 0.075, 5); thornGeo.translate(0, 0.037, 0);
