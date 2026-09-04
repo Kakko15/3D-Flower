@@ -770,15 +770,28 @@ function mergeGeos(list){
 const bouquet = new THREE.Group(); scene.add(bouquet);
 const roses = [], roseProxies = [];
 const PETALS = isMobile ? 84 : 96;
-// Bouquet layout — a tuned 13-head arrangement: one crown bloom and two
-// concentric rings. The spacing is deliberately tight; measured against the
-// real petal extent (~0.769 * scale) the closest pair clears by only ~0.026,
-// so this is effectively at capacity. Adding further rose heads makes blooms
-// interpenetrate and reads as clutter rather than fullness — fill gaps with
-// eucalyptus and baby's breath instead.
-const headDefs = [{ p: [0, 2.1, 0], s: 0.68 }];
-for (let i = 0; i < 6; i++){ const a = i / 6 * Math.PI * 2 + 0.3; headDefs.push({ p: [Math.cos(a) * 0.98, 1.72 + Math.sin(a * 2) * 0.05, Math.sin(a) * 0.98], s: 0.62 }); }
-for (let i = 0; i < 6; i++){ const a = i / 6 * Math.PI * 2 + 0.3 + Math.PI / 6; headDefs.push({ p: [Math.cos(a) * 1.62, 1.18 + Math.cos(a * 3) * 0.06, Math.sin(a) * 1.62], s: 0.6 }); }
+// Bouquet layout — a domed hand-tied arrangement.
+//
+// The previous version derived each bloom's facing from (head - roseRoot),
+// which tied the tilt to the head's position: the outer ring only leaned 25.6
+// degrees off vertical, so every rose pointed up and out and the bouquet read
+// as a flat fan. Facing is now an explicit per-head `tilt` (degrees from
+// vertical), decoupled from position, so the outer roses can lean out and
+// slightly down over the edge to close the dome.
+//
+// Radii/heights are solved so no two heads interpenetrate, measured against the
+// real petal extent (0.769 * scale) taken from buildRoseGeometry. This layout
+// clears by 0.257 — far roomier than the old 0.026 — because the rings are
+// spread down the dome instead of stacked in one plane.
+const headDefs = [{ p: [0, 2.18, 0], s: 0.64, tilt: 0 }];
+for (let i = 0; i < 6; i++){
+  const a = i / 6 * Math.PI * 2 + 0.3;
+  headDefs.push({ p: [Math.cos(a) * 1.15, 1.75 + Math.sin(a * 2) * 0.05, Math.sin(a) * 1.15], s: 0.58, tilt: 38 });
+}
+for (let i = 0; i < 7; i++){
+  const a = i / 7 * Math.PI * 2 + 0.3 + Math.PI / 7;
+  headDefs.push({ p: [Math.cos(a) * 1.52, 0.75 + Math.cos(a * 3) * 0.06, Math.sin(a) * 1.52], s: 0.54, tilt: 72 });
+}
 const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.72, metalness: 0.0 });
 const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
 const thornGeo = new THREE.ConeGeometry(0.018, 0.075, 5); thornGeo.translate(0, 0.037, 0);
@@ -797,7 +810,14 @@ headDefs.forEach((h, i) => {
     uniforms: Object.assign({}, P, { uBloom: { value: 0 }, uTint: { value: new THREE.Color(1 - rand() * 0.06, 1 - rand() * 0.08, 1 - rand() * 0.05) } }) });
   const rose = new THREE.Mesh(geo, mat);
   const head = new THREE.Vector3(...h.p);
-  const dir = head.clone().sub(roseRoot).normalize();
+  // Facing: tilt the bloom away from vertical, leaning outward along its own
+  // radial direction. Outer roses lean far enough to face out and slightly
+  // down, which is what closes the dome instead of fanning upward.
+  const radial = new THREE.Vector3(head.x, 0, head.z);
+  if (radial.lengthSq() < 1e-6) radial.set(1, 0, 0);
+  radial.normalize();
+  const tr = (h.tilt || 0) * Math.PI / 180;
+  const dir = new THREE.Vector3(0, Math.cos(tr), 0).addScaledVector(radial, Math.sin(tr)).normalize();
   rose.position.copy(head); rose.quaternion.setFromUnitVectors(UP, dir); rose.scale.setScalar(h.s);
   rose.rotateY(rand() * Math.PI * 2);
   rose.userData = { index: i, bloom: 0, dir, hoverT: 0 };
@@ -822,32 +842,29 @@ headDefs.forEach((h, i) => {
   const calyx = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 7), calyxMat); calyx.position.set(0, -0.06, 0); calyx.rotation.x = Math.PI; rose.add(calyx);
   const hip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), calyxMat); hip.position.set(0, -0.2, 0); rose.add(hip);
   for (let s = 0; s < 5; s++){ const sep = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.34, 4), calyxMat); const a = s / 5 * Math.PI * 2; sep.position.set(Math.cos(a) * 0.2, 0.02, Math.sin(a) * 0.2); sep.lookAt(Math.cos(a) * 1.4, 0.9, Math.sin(a) * 1.4); sep.rotateX(Math.PI / 2); rose.add(sep); }
-  // Stem — a hand-gathered bouquet crosses its stems through the binding point
-  // rather than radiating as straight spokes. Each stem is given a tangential
-  // swirl that reverses sign below the tie, so stems lean one way in the
-  // gather and the opposite way in the tail, crisscrossing near the ribbon.
+  // Stem — a smooth cubic bezier from the handle up to the bloom.
+  //
+  // Previously the cut ends splayed to radius ~0.37, which is what made the
+  // base look like a straw broom. Now every stem starts inside a tight handle
+  // (radius <= 0.09) and stays there: the curve rises vertically out of the
+  // grip, then sweeps outward high up to meet its head. A small tangential
+  // bow keeps neighbouring stems from looking like parallel rails.
   const hx = head.x, hz = head.z; const rr = Math.hypot(hx, hz) || 1; const nx = hx / rr, nz = hz / rr;
-  // Perpendicular (tangential) direction in the XZ plane.
-  const tx = -nz, tz = nx;
-  const swirl = (rand() - 0.5) * 0.34;          // per-stem lean, both directions
-  const cross = (i % 2 ? 1 : -1) * (0.16 + rand() * 0.12); // alternating crossover
-  const wob = 0.05 + rand() * 0.05;             // mid-stem bow amplitude
-  const pts = [
-    // Cut end, splayed below the tie and kicked tangentially the OPPOSITE way
-    // from the gather — this is what produces the crossed tail under the wrap.
-    new THREE.Vector3(nx * 0.36 + tx * -cross * 1.5 + (rand() - 0.5) * 0.12, -3.0, nz * 0.36 + tz * -cross * 1.5 + (rand() - 0.5) * 0.12),
-    // Just under the ribbon: pulled tight toward the axis, slight cross lean.
-    new THREE.Vector3(nx * 0.10 + tx * -cross * 0.5, -1.32, nz * 0.10 + tz * -cross * 0.5),
-    // The binding point: all stems converge into a narrow neck.
-    new THREE.Vector3(nx * 0.06 + tx * cross * 0.25, -0.95, nz * 0.06 + tz * cross * 0.25),
-    // Opening out through the gather, bowing tangentially.
-    new THREE.Vector3(hx * 0.34 + tx * (swirl + wob), -0.15 + (rand() - 0.5) * 0.16, hz * 0.34 + tz * (swirl + wob)),
-    // Approaching the head, easing back toward the bloom axis.
-    new THREE.Vector3(hx * 0.72 + tx * swirl * 0.55, 0.62 + (rand() - 0.5) * 0.18, hz * 0.72 + tz * swirl * 0.55),
-    head.clone().addScaledVector(dir, -0.12 * h.s - 0.02)
-  ];
-  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
-  { const sg = new THREE.TubeGeometry(curve, 30, 0.03, 7, false); sg.deleteAttribute('uv'); stemGeos.push(sg); }
+  const tx = -nz, tz = nx;                      // tangential axis
+  const grip = 0.05 + rand() * 0.035;           // where this stem sits in the bundle
+  const gAng = rand() * Math.PI * 2;            // its slot around the handle
+  const bow = (rand() - 0.5) * 0.22;            // gentle sideways lean
+  const bx = Math.cos(gAng) * grip, bz = Math.sin(gAng) * grip;
+  // Cubic bezier control net: P0 handle bottom, P1 straight up through the
+  // wrap, P2 flares out under the canopy, P3 the bloom's neck.
+  // P1 is kept low and near the axis so the curve stays inside the ribbon
+  // sleeve for the whole length of the wrap (-1.62 .. -0.86) before flaring.
+  const P0 = new THREE.Vector3(bx, -2.62, bz);
+  const P1 = new THREE.Vector3(bx * 0.6, -0.72, bz * 0.6);
+  const P2 = new THREE.Vector3(hx * 0.46 + tx * bow, 0.30, hz * 0.46 + tz * bow);
+  const P3 = head.clone().addScaledVector(dir, -0.12 * h.s - 0.02);
+  const curve = new THREE.CubicBezierCurve3(P0, P1, P2, P3);
+  { const sg = new THREE.TubeGeometry(curve, 32, 0.03, 7, false); sg.deleteAttribute('uv'); stemGeos.push(sg); }
   for (let k = 0; k < 6; k++){
     const t = 0.08 + rand() * 0.62; const p = curve.getPointAt(t), tan = curve.getTangentAt(t);
     const ang = rand() * Math.PI * 2; const perp = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)).sub(tan.clone().multiplyScalar(tan.dot(new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang))))).normalize();
@@ -873,12 +890,13 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
     const g = new THREE.TubeGeometry(curve, seg, rad, radSeg, false);
     g.deleteAttribute('uv'); branchGeos.push(g);
   };
-  // Outer eucalyptus sprays that frame the silhouette.
-  const EUC_BRANCHES = isMobile ? 9 : 13;
+  // Outer eucalyptus sprays that frame the dome's rim, arcing out and slightly
+  // down to follow the outer roses rather than shooting past them.
+  const EUC_BRANCHES = isMobile ? 10 : 14;
   for (let b = 0; b < EUC_BRANCHES; b++){
     const a = b / EUC_BRANCHES * Math.PI * 2 + 0.55 + (rand() - 0.5) * 0.4; const cx = Math.cos(a), cz = Math.sin(a);
-    const reach = 1.55 + rand() * 0.5, top = 0.7 + rand() * 0.9;
-    const pts = [new THREE.Vector3(cx * 0.1, -1.6, cz * 0.1), new THREE.Vector3(cx * 0.8, -0.2, cz * 0.8), new THREE.Vector3(cx * reach, top, cz * reach)];
+    const reach = 1.42 + rand() * 0.34, top = 0.45 + rand() * 0.7;
+    const pts = [new THREE.Vector3(cx * 0.08, -1.5, cz * 0.08), new THREE.Vector3(cx * 0.75, -0.15, cz * 0.75), new THREE.Vector3(cx * reach, top, cz * reach)];
     const curve = new THREE.CatmullRomCurve3(pts);
     addBranch(curve, 14, 0.013, 5);
     for (let t = 0.32; t <= 1.0; t += 0.085){
@@ -892,26 +910,34 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
       leafMats.push(dummy.matrix.clone()); leafCols.push(new THREE.Color().setHSL(0.4 + rand() * 0.06, 0.22 + rand() * 0.14, 0.4 + rand() * 0.14));
     }
   }
-  // Inner collar foliage. Short, steeply-angled sprigs packed around the neck
-  // of the gather (y roughly -0.9 .. 0.5) where the bare stems are otherwise
-  // visible. These sit below the rose heads, so they fill the void without
-  // competing with the blooms.
-  const INNER_SPRIGS = isMobile ? 10 : 16;
+  // Interior foliage — the visual "filler" that hides the mechanics. These are
+  // short, near-vertical sprigs packed tightly around the axis and fanning out
+  // just beneath the blooms, so the view down into the middle of the dome hits
+  // leaves rather than bare stems.
+  const INNER_SPRIGS = isMobile ? 16 : 26;
   for (let b = 0; b < INNER_SPRIGS; b++){
-    const a = b / INNER_SPRIGS * Math.PI * 2 + rand() * 0.6; const cx = Math.cos(a), cz = Math.sin(a);
-    const reach = 0.55 + rand() * 0.42, top = 0.15 + rand() * 0.5;
-    const pts = [new THREE.Vector3(cx * 0.07, -1.15, cz * 0.07), new THREE.Vector3(cx * reach * 0.6, -0.5 + rand() * 0.2, cz * reach * 0.6), new THREE.Vector3(cx * reach, top, cz * reach)];
+    // two concentric skirts of filler at different heights
+    const tier = b % 2;
+    const a = b / INNER_SPRIGS * Math.PI * 2 * 2 + rand() * 0.7;
+    const cx = Math.cos(a), cz = Math.sin(a);
+    const reach = tier ? 0.5 + rand() * 0.32 : 0.85 + rand() * 0.4;
+    const top = tier ? 0.85 + rand() * 0.5 : 0.35 + rand() * 0.45;
+    const pts = [
+      new THREE.Vector3(cx * 0.06, -1.2, cz * 0.06),
+      new THREE.Vector3(cx * reach * 0.5, top * 0.35 - 0.45, cz * reach * 0.5),
+      new THREE.Vector3(cx * reach, top, cz * reach)
+    ];
     const curve = new THREE.CatmullRomCurve3(pts);
     addBranch(curve, 10, 0.011, 5);
-    for (let t = 0.22; t <= 1.0; t += 0.115){
+    for (let t = 0.18; t <= 1.0; t += 0.095){
       const p = curve.getPointAt(Math.min(t, 1)), tan = curve.getTangentAt(Math.min(t, 1));
-      const side = (Math.round(t / 0.115) % 2 ? 1 : -1);
+      const side = (Math.round(t / 0.095) % 2 ? 1 : -1);
       const sideV = new THREE.Vector3(-cz, 0, cx).multiplyScalar(side);
-      const r = 0.085 + rand() * 0.055;
+      const r = 0.085 + rand() * 0.06;
       dummy.position.copy(p).addScaledVector(sideV, r * 0.85).addScaledVector(tan, 0.015);
       dummy.lookAt(dummy.position.clone().add(new THREE.Vector3(cx * 0.5 + sideV.x * 0.4, 0.55 + (rand() - 0.5) * 0.5, cz * 0.5 + sideV.z * 0.4)));
       dummy.rotateZ(rand() * Math.PI); dummy.scale.setScalar(r); dummy.updateMatrix();
-      leafMats.push(dummy.matrix.clone()); leafCols.push(new THREE.Color().setHSL(0.38 + rand() * 0.06, 0.20 + rand() * 0.14, 0.30 + rand() * 0.12));
+      leafMats.push(dummy.matrix.clone()); leafCols.push(new THREE.Color().setHSL(0.38 + rand() * 0.06, 0.20 + rand() * 0.14, 0.28 + rand() * 0.12));
     }
   }
   const leaves = new THREE.InstancedMesh(leafGeo, leafMat, leafMats.length);
@@ -993,11 +1019,15 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   for (let s = 0; s < BB_SPRIGS; s++){
     const a = 0.3 + (s + 0.5) * (Math.PI / 6) + (rand() - 0.5) * 0.12;
     const cx = Math.cos(a), cz = Math.sin(a);
-    const reach = 1.15 + rand() * 0.75, top = 1.62 + rand() * 0.95;
+    const reach = 1.0 + rand() * 0.55, top = 1.72 + rand() * 0.9;
     let end = new THREE.Vector3(cx * reach, top, cz * reach);
-    // Push the cluster centre out of any rose head it would intersect.
-    const CLUSTER = 0.34; // cluster half-extent used when testing overlap
-    for (let iter = 0; iter < 12; iter++){
+    // Push the cluster centre out of any rose head it would intersect. The
+    // resolution is biased upward and clamped in radius: pushing purely
+    // outward would fling sprigs past the silhouette and blow out the
+    // bouquet's width on narrow (portrait) viewports.
+    const CLUSTER = 0.3;      // cluster half-extent used when testing overlap
+    const MAX_R = 1.62;       // hard radial limit for a floret cluster centre
+    for (let iter = 0; iter < 14; iter++){
       let worst = -1, wi = -1;
       for (let k = 0; k < heads.length; k++){
         const need = headR[k] + CLUSTER;
@@ -1005,12 +1035,15 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
         if (need - d > worst){ worst = need - d; wi = k; }
       }
       if (worst <= 0) break;
-      // move directly away from the offending bloom, mostly upward/outward
       const push = end.clone().sub(heads[wi]);
       if (push.lengthSq() < 1e-6) push.set(cx, 1, cz);
+      push.normalize();
+      push.y = Math.abs(push.y) + 0.85;      // prefer lifting over spreading
       push.normalize().multiplyScalar(worst + 0.03);
       end.add(push);
-      if (end.y < 1.2) end.y = 1.2; // keep sprigs in the upper canopy
+      const rNow = Math.hypot(end.x, end.z);
+      if (rNow > MAX_R){ const k = MAX_R / rNow; end.x *= k; end.z *= k; }
+      if (end.y < 1.25) end.y = 1.25;        // keep sprigs in the upper canopy
     }
     const curve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(cx * 0.05, -1.4, cz * 0.05),
@@ -1066,59 +1099,57 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
     return g;
   }
 
-  // Helical cuff: the ribbon spirals down the stem bundle, overlapping itself
-  // like a real hand-tied wrap instead of sitting as two detached rings.
-  const TURNS = 3.15, CUFF_TOP = -0.92, CUFF_BOT = -1.46;
+  // Smooth wrap cuff. The stems now converge into a slim handle (radius ~0.09),
+  // so the ribbon hugs that bundle closely: a dense, many-turn spiral whose
+  // neighbouring turns touch, reading as one continuous sleeve of satin rather
+  // than a coil of separate bands. No knot — the wrap simply overlaps itself.
+  // Sized to fully enclose the stem bundle: the widest stem passes the wrap at
+  // radius ~0.218, so the sleeve sits just outside that and nothing pokes out.
+  const HANDLE_R = 0.245;
+  const TURNS = 6.5, CUFF_TOP = -0.86, CUFF_BOT = -1.62;
   const cuffPts = [];
-  for (let i = 0; i <= 120; i++){
-    const t = i / 120;
+  for (let i = 0; i <= 320; i++){
+    const t = i / 320;
     const ang = t * Math.PI * 2 * TURNS + 0.6;
     const y = CUFF_TOP + (CUFF_BOT - CUFF_TOP) * t;
-    // Bundle tapers slightly toward the bottom of the wrap.
-    const r = 0.30 - t * 0.055 + Math.sin(t * Math.PI) * 0.012;
-    cuffPts.push(new THREE.Vector3(Math.cos(ang) * r, y, Math.sin(ang) * r * 1.18));
+    // Slight barrel: fuller in the middle where the hand would grip.
+    const r = HANDLE_R + Math.sin(t * Math.PI) * 0.022 - t * 0.012;
+    cuffPts.push(new THREE.Vector3(Math.cos(ang) * r, y, Math.sin(ang) * r));
   }
   const cuffCurve = new THREE.CatmullRomCurve3(cuffPts);
-  const cuff = new THREE.Mesh(ribbonBand(cuffCurve, 260, 0.17, 0.02, () => 1.35), satin);
+  // Band width slightly exceeds the per-turn pitch so turns overlap and leave
+  // no gaps: pitch = (CUFF_BOT - CUFF_TOP) / TURNS.
+  const cuff = new THREE.Mesh(ribbonBand(cuffCurve, 520, 0.145, 0.014, () => 1.4), satin);
   bouquet.add(cuff);
 
-  // Knot where the wrap is tied off, on the camera-facing side.
-  const knot = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 12), satin);
-  knot.position.set(0.05, -1.2, 0.34); knot.scale.set(1.5, 1.05, 0.85);
-  knot.rotation.z = 0.3; bouquet.add(knot);
-
-  // Two soft bow loops springing from the knot.
-  for (const side of [-1, 1]){
-    const loopPts = [];
-    for (let i = 0; i <= 40; i++){
-      const t = i / 40, ang = t * Math.PI * 2;
-      // teardrop loop lying mostly in front of the wrap
-      const lx = Math.sin(ang) * 0.20 * side;
-      const ly = (1 - Math.cos(ang)) * 0.13 - Math.sin(t * Math.PI) * 0.05;
-      const lz = Math.sin(ang * 0.5) * 0.11;
-      loopPts.push(new THREE.Vector3(0.05 + lx * (0.6 + t * 0.5), -1.2 + ly, 0.34 + lz));
-    }
-    const loop = new THREE.Mesh(ribbonBand(new THREE.CatmullRomCurve3(loopPts), 90, 0.12, 0.015, (t) => Math.sin(t * Math.PI) * 0.8), satin);
-    bouquet.add(loop);
+  // A soft collar where the wrap begins, hiding the transition into the leaves.
+  const collarPts = [];
+  for (let i = 0; i <= 60; i++){
+    const t = i / 60, ang = t * Math.PI * 2;
+    collarPts.push(new THREE.Vector3(Math.cos(ang) * (HANDLE_R + 0.03), -0.88 + Math.sin(ang * 3) * 0.012, Math.sin(ang) * (HANDLE_R + 0.03)));
   }
+  bouquet.add(new THREE.Mesh(ribbonBand(new THREE.CatmullRomCurve3(collarPts, true), 130, 0.13, 0.012, () => 1.25), satin));
 
-  // Drooping tails: gravity-curved streamers with a gentle twist and a
-  // notched V cut at the end, falling from the knot past the cut stems.
-  function tail(x0, z0, lean, len, twist){
+  // Flowing tails: long satin streamers that fall from the base of the wrap,
+  // swaying and twisting as they go so they read as cloth rather than strips.
+  function tail(ang0, len, sway, twist, drift){
     const pts = [];
-    for (let i = 0; i <= 24; i++){
-      const t = i / 24;
-      // accelerating downward fall with a lateral sway
-      const y = -1.2 - len * Math.pow(t, 1.15);
-      const sway = Math.sin(t * 2.6 + lean) * 0.14 * t + lean * 0.16 * t;
-      pts.push(new THREE.Vector3(x0 + sway, y, z0 + Math.sin(t * 3.1) * 0.06 + t * 0.05));
+    for (let i = 0; i <= 30; i++){
+      const t = i / 30;
+      const y = -1.55 - len * Math.pow(t, 1.12);
+      // spiral outward slightly, then fall away with a lateral swing
+      const ang = ang0 + drift * t;
+      const r = HANDLE_R * (1 - t * 0.25) + Math.sin(t * 3.4 + twist) * sway * t;
+      pts.push(new THREE.Vector3(Math.cos(ang) * r + Math.sin(t * 2.2 + twist) * sway * t * 1.4, y, Math.sin(ang) * r + Math.cos(t * 1.9 + twist) * sway * t));
     }
     const curve = new THREE.CatmullRomCurve3(pts);
-    const g = ribbonBand(curve, 80, 0.13, 0.012, (t) => Math.sin(t * Math.PI * 1.4 + twist) * 1.1);
+    // taper the band toward the tip so the streamer narrows as it falls
+    const g = ribbonBand(curve, 110, 0.125, 0.011, (t) => Math.sin(t * Math.PI * 1.7 + twist) * 1.25);
     return new THREE.Mesh(g, satin);
   }
-  bouquet.add(tail(-0.02, 0.33, -0.55, 0.95, 0.2));
-  bouquet.add(tail(0.12, 0.31, 0.65, 1.18, 1.1));
+  bouquet.add(tail(0.9, 1.05, 0.16, 0.2, 0.5));
+  bouquet.add(tail(2.5, 1.32, 0.19, 1.3, -0.6));
+  bouquet.add(tail(4.6, 0.86, 0.13, 2.4, 0.35));
 }
 
 /* ---------- Ground contact shadow ---------- */
