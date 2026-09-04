@@ -58,6 +58,37 @@
   @media (max-width:768px){#dock{gap:2px;padding:6px}#dock button{width:40px;height:40px}#dock .tip{display:none}}
   .hidden{display:none!important}
 
+  /* ---------- Bespoke Floral Studio shelf ---------- */
+  #studio{position:fixed;left:50%;bottom:calc(78px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(14px);z-index:29;
+    display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:22px;width:min(560px,calc(100vw - 24px));
+    opacity:0;pointer-events:none;transition:opacity .5s cubic-bezier(.2,.8,.2,1),transform .5s cubic-bezier(.2,.8,.2,1)}
+  #studio.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+  #studio .st-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center}
+  #studio .st-lbl{font-size:.56rem;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.5);width:100%;text-align:center;margin-bottom:-2px}
+  .sp-pill{display:flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;font-size:.72rem;letter-spacing:.05em;
+    color:rgba(255,255,255,.74);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);transition:all .3s cubic-bezier(.2,.8,.2,1);white-space:nowrap}
+  .sp-pill:hover{background:rgba(255,255,255,.14);color:#fff;transform:translateY(-2px)}
+  .sp-pill.active{background:linear-gradient(135deg,rgba(212,175,55,.55),rgba(212,175,55,.18));color:#fff;border-color:rgba(243,220,149,.5);box-shadow:0 6px 18px rgba(212,175,55,.28)}
+  .sp-pill .ico{font-size:.9rem;line-height:1}
+  .sw{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.28);cursor:pointer;transition:all .3s cubic-bezier(.2,.8,.2,1);position:relative}
+  .sw:hover{transform:scale(1.16) translateY(-2px);border-color:rgba(255,255,255,.65)}
+  .sw.active{border-color:var(--gold-2);box-shadow:0 0 0 3px rgba(212,175,55,.3),0 6px 16px rgba(0,0,0,.4);transform:scale(1.1)}
+  .sw .swname{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);white-space:nowrap;font-size:.58rem;letter-spacing:.14em;
+    text-transform:uppercase;padding:4px 8px;border-radius:6px;background:rgba(10,6,4,.9);color:var(--gold-2);opacity:0;pointer-events:none;transition:opacity .25s}
+  .sw:hover .swname{opacity:1}
+  #studio .picker-wrap{display:flex;align-items:center;gap:7px;padding:4px 10px 4px 6px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14)}
+  #studio input[type=color]{width:28px;height:28px;padding:0;border:none;border-radius:50%;background:none;cursor:pointer}
+  #studio input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+  #studio input[type=color]::-webkit-color-swatch{border:2px solid rgba(255,255,255,.35);border-radius:50%}
+  #studio .picker-wrap span{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.6)}
+  #studioTarget{font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-2);opacity:.9}
+  @media (max-width:768px){
+    #studio{bottom:calc(70px + env(safe-area-inset-bottom));padding:10px;gap:8px;border-radius:18px}
+    .sp-pill{padding:6px 10px;font-size:.66rem}
+    .sw{width:26px;height:26px}
+    #studio .st-lbl{font-size:.52rem}
+  }
+
   /* ---------- Toast ---------- */
   #toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);z-index:60;padding:10px 18px;border-radius:999px;font-size:.78rem;letter-spacing:.12em;opacity:0;pointer-events:none;transition:all .45s cubic-bezier(.2,.8,.2,1);color:var(--gold-2)}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -365,10 +396,27 @@
   <button data-preset="2"><i data-lucide="flame"></i><span class="tip">Candlelight</span></button>
   <div class="sep"></div>
   <button id="btnMute"><i data-lucide="volume-2" id="icoOn"></i><i data-lucide="volume-x" id="icoOff" class="hidden"></i><span class="tip">Sound</span></button>
+  <button id="btnStudio"><i data-lucide="flower-2"></i><span class="tip">Floral Studio</span></button>
   <button id="btnCustomise2"><i data-lucide="pen-line"></i><span class="tip">Customise</span></button>
   <button id="btnShare2"><i data-lucide="share-2"></i><span class="tip">Share Letter</span></button>
   <button id="btnReplay"><i data-lucide="rotate-ccw"></i><span class="tip">Replay</span></button>
 </nav>
+
+<!-- Bespoke Floral Studio -->
+<section id="studio" class="glass" aria-label="Bespoke Floral Studio">
+  <div class="st-row">
+    <div class="st-lbl">Bespoke Floral Studio</div>
+    <div class="st-row" id="studioSpecies"></div>
+  </div>
+  <div class="st-row">
+    <div class="st-lbl">Palette <span id="studioTarget">· whole bouquet</span></div>
+    <div class="st-row" id="studioSwatches"></div>
+    <label class="picker-wrap" title="Pick any colour">
+      <input type="color" id="studioPicker" value="#f8a466" />
+      <span>Custom</span>
+    </label>
+  </div>
+</section>
 
 <div id="toast" class="glass"></div>
 
@@ -729,6 +777,268 @@ function buildRoseGeometry(petalCount, rand){
   return g;
 }
 
+/* ---------- Additional species geometry ----------
+   Every generator emits the same attribute set as buildRoseGeometry
+   (position/uv/aT/aV/aOpen/aPhase) so all five species share one shader:
+     aT  0..1  centre -> outer edge of the bloom  (drives the colour gradient)
+     aV  0..1  base   -> tip of an individual petal
+     aOpen     direction a petal swings when uBloom animates it open
+     aPhase    per-petal random, used for idle sway and ruffling
+   Each returns geometry in the same local frame as the rose: the bloom sits
+   just above y = 0 and faces +Y, so layout, stems and calyx code are unchanged.
+--------------------------------------------------------------------------- */
+function finishGeo(pos, uv, aT, aV, aOpen, aPhase, idx){
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aT', new THREE.Float32BufferAttribute(aT, 1));
+  g.setAttribute('aV', new THREE.Float32BufferAttribute(aV, 1));
+  g.setAttribute('aOpen', new THREE.Float32BufferAttribute(aOpen, 3));
+  g.setAttribute('aPhase', new THREE.Float32BufferAttribute(aPhase, 1));
+  g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+  return g;
+}
+// Emit one petal surface defined by a parametric function f(u,v) -> [x,y,z].
+function emitSheet(acc, segU, segV, tVal, phase, openVec, f){
+  const base = acc.pos.length / 3;
+  for (let j = 0; j <= segV; j++){
+    const v = j / segV;
+    for (let i = 0; i <= segU; i++){
+      const u = i / segU;
+      const p = f(u, v);
+      acc.pos.push(p[0], p[1], p[2]);
+      acc.uv.push(u, v);
+      acc.aT.push(tVal); acc.aV.push(v);
+      acc.aOpen.push(openVec[0], openVec[1], openVec[2]);
+      acc.aPhase.push(phase);
+    }
+  }
+  for (let j = 0; j < segV; j++){
+    for (let i = 0; i < segU; i++){
+      const a = base + j * (segU + 1) + i, b = a + 1, c = a + segU + 1, d = c + 1;
+      acc.idx.push(a, c, b, b, c, d);
+    }
+  }
+}
+const newAcc = () => ({ pos: [], uv: [], aT: [], aV: [], aOpen: [], aPhase: [], idx: [] });
+const packAcc = (acc) => finishGeo(acc.pos, acc.uv, acc.aT, acc.aV, acc.aOpen, acc.aPhase, acc.idx);
+
+/* French Tulip — 6 large overlapping curved petals forming an upright teardrop
+   cup. Petal centreline follows a sine parabola; the rim closes inward at the
+   top so the silhouette stays egg-shaped rather than opening flat.          */
+function buildTulipGeometry(_count, rand){
+  const acc = newAcc();
+  const N = 6, segU = 10, segV = 14;
+  for (let k = 0; k < N; k++){
+    const a = k / N * Math.PI * 2 + rand() * 0.12;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const lean = 0.10 + rand() * 0.05;
+    const len = 0.92 + rand() * 0.10;
+    const wid = 0.40 + rand() * 0.05;
+    const phase = rand() * Math.PI * 2;
+    // outer ring petals read as t~0.75, inner as t~0.35 for gradient variety
+    const tVal = k % 2 ? 0.72 : 0.42;
+    emitSheet(acc, segU, segV, tVal, phase, [ca * 0.5, 0.25, sa * 0.5], (u, v) => {
+      // width tapers to a rounded point at the tip
+      const prof = Math.sin(Math.min(v * 1.06, 1) * Math.PI * 0.86);
+      const w = wid * (0.20 + 0.80 * prof) * (1 - 0.30 * v * v);
+      const x = (u - 0.5) * 2 * w;
+      // parabolic cup: petal bows inward, then flares slightly at the very tip
+      const cup = -1.55 * (x * x) * (0.45 + 0.55 * v);
+      const inward = -Math.sin(v * Math.PI * 0.62) * 0.16 * len;
+      const flare = Math.pow(Math.max(0, v - 0.82) / 0.18, 2) * 0.09;
+      const rad = 0.13 + lean * v + inward + flare;
+      const y = Math.sin(v * Math.PI * 0.52) * len + 0.02;
+      const rr = rad + cup;
+      return [ca * rr + (-sa) * x, y, sa * rr + ca * x];
+    });
+  }
+  return packAcc(acc);
+}
+
+/* Hydrangea — a dome densely packed with small 4-petal florets.            */
+function buildHydrangeaGeometry(_count, rand){
+  const acc = newAcc();
+  const N = isMobile ? 46 : 74, segU = 4, segV = 4;
+  for (let k = 0; k < N; k++){
+    // even-ish spread over a hemisphere via the golden angle
+    const idx2 = k + 0.5;
+    const phi = Math.acos(1 - 1.35 * idx2 / N);       // 0..~ 70deg, dome only
+    const th = Math.PI * (1 + Math.sqrt(5)) * idx2;
+    const R = 0.54 + rand() * 0.05;
+    const cx = Math.sin(phi) * Math.cos(th), cy = Math.cos(phi), cz = Math.sin(phi) * Math.sin(th);
+    // Lift the dome so no floret drops below the receptacle (y >= ~0.02),
+    // otherwise the lowest florets poke out under the calyx.
+    const ox = cx * R, oy = cy * R * 0.80 + 0.36, oz = cz * R;
+    const phase = rand() * Math.PI * 2;
+    const fs = 0.15 + rand() * 0.05;                  // floret size
+    const tVal = 0.30 + (1 - cy) * 0.62;              // outer florets read paler
+    // local frame on the dome surface
+    const nx = cx, ny = cy, nz = cz;
+    let ux = -cz, uy = 0, uz = cx;
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    const vx = ny * uz - nz * uy, vy = nz * ux - nx * uz, vz = nx * uy - ny * ux;
+    const spin = rand() * Math.PI * 2;
+    for (let pt = 0; pt < 4; pt++){
+      const pa = pt / 4 * Math.PI * 2 + spin;
+      const pc = Math.cos(pa), ps = Math.sin(pa);
+      emitSheet(acc, segU, segV, tVal, phase, [nx * 0.35, ny * 0.35 + 0.1, nz * 0.35], (u, v) => {
+        // rounded lozenge petal lying on the dome surface
+        const w = fs * 0.62 * Math.sin(Math.max(v, 0.001) * Math.PI) * (1 + 0.25 * v);
+        const along = fs * (0.22 + v * 0.95);
+        const su = (u - 0.5) * 2 * w;
+        const lx = pc * along - ps * su, lz = ps * along + pc * su;
+        const lift = 0.018 + Math.sin(v * Math.PI) * 0.030;   // slight bowl
+        return [
+          ox + ux * lx + vx * lz + nx * lift,
+          oy + uy * lx + vy * lz + ny * lift,
+          oz + uz * lx + vz * lz + nz * lift
+        ];
+      });
+    }
+  }
+  return packAcc(acc);
+}
+
+/* Peony — ultra-plush: broad scalloped guard petals outside, dense crimped
+   feathery petaloids in the centre.                                        */
+function buildPeonyGeometry(count, rand){
+  const acc = newAcc();
+  const total = Math.max(48, Math.round(count * 0.78));
+  const guards = Math.round(total * 0.36);
+  const inner = total - guards;
+  // --- broad outer guard petals ---
+  for (let k = 0; k < guards; k++){
+    const t = k / Math.max(1, guards - 1);
+    const a = k * 2.399963 + rand() * 0.2;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const tilt = 0.92 + t * 0.26 + (rand() - 0.5) * 0.1;   // lie well open
+    const len = 0.38 + t * 0.14, wid = 0.34 + t * 0.14;
+    const rad = 0.20 + t * 0.19;
+    const phase = rand() * Math.PI * 2;
+    const st = Math.sin(tilt), ct2 = Math.cos(tilt);
+    emitSheet(acc, 8, 8, 0.68 + t * 0.32, phase, [ca * 0.55, 0.18, sa * 0.55], (u, v) => {
+      // scalloped edge: several rounded lobes across the petal width
+      const scallop = 1 + 0.10 * Math.sin(u * Math.PI * 5.0);
+      const prof = Math.sin(Math.min(v * 1.12, 1) * Math.PI * 0.5) * scallop;
+      const w = wid * (0.16 + 0.84 * prof);
+      const x = (u - 0.5) * 2 * w;
+      const yy = v * len;
+      // cup gently upward, with a wavy ruffled rim
+      const cupz = -1.15 * x * x * (0.4 + 0.6 * v) - 0.10 * Math.pow(v, 1.6) * len
+                 + 0.035 * Math.sin(u * Math.PI * 4.0 + phase) * Math.pow(v, 2.0);
+      const ry = yy * ct2 - cupz * st;
+      const rz = yy * st + cupz * ct2 + rad;
+      return [ca * rz + (-sa) * x, ry + 0.04, sa * rz + ca * x];
+    });
+  }
+  // --- crimped feathery centre ---
+  for (let k = 0; k < inner; k++){
+    const t = k / Math.max(1, inner - 1);
+    const a = k * 2.399963 + rand() * 0.25;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const rad = 0.02 + Math.pow(t, 0.9) * 0.28;
+    const tilt = 0.16 + t * 0.62;
+    const len = 0.20 + t * 0.16, wid = 0.10 + t * 0.09;
+    const phase = rand() * Math.PI * 2;
+    const st = Math.sin(tilt), ct2 = Math.cos(tilt);
+    emitSheet(acc, 5, 6, t * 0.42, phase, [ca * 0.3, 0.35, sa * 0.3], (u, v) => {
+      // narrow, strongly crimped petaloid
+      const w = wid * (0.25 + 0.75 * Math.sin(Math.min(v * 1.2, 1) * Math.PI * 0.5));
+      const x = (u - 0.5) * 2 * w;
+      const yy = v * len;
+      const crimp = 0.045 * Math.sin(u * Math.PI * 6.0 + phase * 2.0) * Math.pow(v, 1.2);
+      const curl = -0.26 * Math.pow(v, 1.5) * len;      // tips fold inward
+      const cz = -1.9 * x * x + crimp + curl;
+      const ry = yy * ct2 - cz * st;
+      const rz = yy * st + cz * ct2 + rad;
+      return [ca * rz + (-sa) * x, ry + 0.09, sa * rz + ca * x];
+    });
+  }
+  return packAcc(acc);
+}
+
+/* Calla Lily — one furled spathe wrapping into a funnel, plus a spadix.    */
+function buildCallaGeometry(_count, rand){
+  const acc = newAcc();
+  const segU = 30, segV = 20;
+  const phase = rand() * Math.PI * 2;
+  const twist = 0.55 + rand() * 0.15;
+  // The spathe: a surface of revolution swept 380deg so the base overlaps
+  // itself into a closed trumpet, flaring wide and tipping to a point.
+  emitSheet(acc, segU, segV, 0.55, phase, [0, 0.5, 0], (u, v) => {
+    const sweep = u * Math.PI * 2.11 - 0.05;          // slight overlap
+    // funnel radius: tight at the base, flaring toward the mouth
+    const flare = 0.10 + Math.pow(v, 1.35) * 0.72;
+    // one side is drawn up into the characteristic pointed tip
+    const tipPull = Math.pow(Math.max(0, Math.cos(sweep * 0.5)), 3.0);
+    const y = v * (0.62 + tipPull * 0.66) + 0.03;
+    // the rim rolls outward as it opens
+    const roll = Math.pow(v, 2.4) * 0.16 * Math.cos(sweep * 1.5);
+    const r = flare + roll + twist * 0.05 * v * Math.sin(sweep);
+    return [Math.cos(sweep) * r, y, Math.sin(sweep) * r];
+  });
+  // Spadix: slim golden column in the throat. Marked aT = 0 so the shader's
+  // inner colour applies; the studio pins that to gold for this species.
+  const segA = 10, segB = 10;
+  emitSheet(acc, segA, segB, 0.0, phase, [0, 0.2, 0], (u, v) => {
+    const a = u * Math.PI * 2;
+    const rr = 0.052 * Math.sin(Math.min(0.06 + v * 1.02, 1) * Math.PI * 0.92) + 0.012;
+    return [Math.cos(a) * rr, 0.10 + v * 0.72, Math.sin(a) * rr];
+  });
+  return packAcc(acc);
+}
+
+/* ---------- Species registry ----------
+   `fit` normalises each bloom's width so a swap does not break the dome
+   packing, which is solved for a petal radius of PETAL_R * scale. It is the
+   ratio PETAL_R / measuredRadius, capped at 1.25 so the tall narrow species
+   (tulip, calla) are not blown up vertically to force a width match.
+   `dew` disables water droplets on species that should read dry/waxy.       */
+const SPECIES = [
+  { id: 'rose',      name: 'Juliet Rose', build: buildRoseGeometry,      fit: 1.02, dew: true,  bloomOpen: 1.0,  petalCount: () => PETALS },
+  { id: 'tulip',     name: 'Tulip',       build: buildTulipGeometry,     fit: 1.25, dew: false, bloomOpen: 0.55, petalCount: () => 6 },
+  { id: 'peony',     name: 'Peony',       build: buildPeonyGeometry,     fit: 0.75, dew: true,  bloomOpen: 1.0,  petalCount: () => PETALS },
+  { id: 'hydrangea', name: 'Hydrangea',   build: buildHydrangeaGeometry, fit: 1.01, dew: false, bloomOpen: 0.5,  petalCount: () => 1 },
+  { id: 'calla',     name: 'Calla Lily',  build: buildCallaGeometry,     fit: 0.68, dew: false, bloomOpen: 0.4,  petalCount: () => 1 },
+];
+const speciesById = (id) => SPECIES.find(s => s.id === id) || SPECIES[0];
+
+/* ---------- Colour palettes ----------
+   Each palette drives the three gradient stops in the petal shader:
+     inner = deep heart, mid = body, outer = pale rim.
+   `pin` forces a stop regardless of palette (the calla's golden spadix uses
+   aT = 0, i.e. the inner stop).                                            */
+const PALETTES = {
+  warm: [
+    { name: 'Apricot Peach',   inner: '#d44e16', mid: '#f8a466', outer: '#fffaf4' },
+    { name: 'Dusty Blush',     inner: '#a8425a', mid: '#e79aa8', outer: '#fdeef0' },
+    { name: 'Velvet Crimson',  inner: '#6d0b18', mid: '#b81f33', outer: '#f4b9bd' },
+    { name: 'Champagne Ivory', inner: '#b08d52', mid: '#e8d3a8', outer: '#fffdf6' },
+  ],
+  tulip: [
+    { name: 'Pure White',      inner: '#b9a98f', mid: '#eee6d8', outer: '#ffffff' },
+    { name: 'Sunset Coral',    inner: '#c62f22', mid: '#f4794f', outer: '#ffd9bd' },
+    { name: 'Royal Violet',    inner: '#3c1259', mid: '#7b34b0', outer: '#dcbdf2' },
+    { name: 'Golden Yellow',   inner: '#c98708', mid: '#f7c53c', outer: '#fff3c4' },
+    { name: 'Flaming Bi-Color',inner: '#b81414', mid: '#f26b1d', outer: '#ffe066' },
+  ],
+  cool: [
+    { name: 'Powder Blue',     inner: '#2b4c86', mid: '#7ba3d9', outer: '#eaf2ff' },
+    { name: 'Lilac Mist',      inner: '#5b3a7e', mid: '#a888cf', outer: '#f0e6fb' },
+    { name: 'Blush Cloud',     inner: '#a8506a', mid: '#e6a3b6', outer: '#fdeff3' },
+    { name: 'Sea Green',       inner: '#1f6157', mid: '#6fb3a2', outer: '#e6f6f0' },
+  ],
+  calla: [
+    { name: 'Ivory & Gold',    inner: '#c9971f', mid: '#f2e6cf', outer: '#fffdf7' },
+    { name: 'Mango',           inner: '#b35c07', mid: '#f0a24a', outer: '#ffe2b0' },
+    { name: 'Blush Calla',     inner: '#b8615f', mid: '#f0c3bd', outer: '#fff4f0' },
+    { name: 'Deep Plum',       inner: '#3a0f33', mid: '#7d2a63', outer: '#e3b8d8' },
+  ],
+};
+// palette set shown for each species
+const SPECIES_PALETTE = { rose: 'warm', peony: 'warm', tulip: 'tulip', hydrangea: 'cool', calla: 'calla' };
+
 /* ---------- Dew material ---------- */
 const dewMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false,
@@ -824,11 +1134,27 @@ const UP = new THREE.Vector3(0, 1, 0);
 const roseRoot = new THREE.Vector3(0, -2.2, 0);
 const dewGeo = new THREE.SphereGeometry(1, 10, 8);
 
+// Build the uniform block for one bloom. Object.assign copies the SHARED
+// uniform objects from P by reference, which is what we want for lighting and
+// fog (a preset change must move every bloom at once) — but the three colour
+// stops must be per-bloom, or picking a colour for one flower would repaint
+// the whole bouquet. Those three are cloned into fresh uniform objects.
+function makeBloomUniforms(rand){
+  const u = Object.assign({}, P, {
+    uBloom: { value: 0 },
+    uTint: { value: new THREE.Color(1 - rand() * 0.06, 1 - rand() * 0.08, 1 - rand() * 0.05) },
+  });
+  const clone = (src, fallback) => ({ value: (src && src.value ? src.value.clone() : new THREE.Color(fallback)) });
+  u.uInner = clone(P.uInner, '#d44e16');
+  u.uMid   = clone(P.uMid,   '#f8a466');
+  u.uOuter = clone(P.uOuter, '#fffaf4');
+  return u;
+}
 headDefs.forEach((h, i) => {
   const rand = mulberry32(1000 + i * 77);
   const geo = buildRoseGeometry(PETALS, rand);
   const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide, vertexShader: petalVert, fragmentShader: petalFrag,
-    uniforms: Object.assign({}, P, { uBloom: { value: 0 }, uTint: { value: new THREE.Color(1 - rand() * 0.06, 1 - rand() * 0.08, 1 - rand() * 0.05) } }) });
+    uniforms: makeBloomUniforms(rand) });
   const rose = new THREE.Mesh(geo, mat);
   const head = new THREE.Vector3(...h.p);
   // Facing: tilt the bloom away from vertical, leaning outward along its own
@@ -841,7 +1167,9 @@ headDefs.forEach((h, i) => {
   const dir = new THREE.Vector3(0, Math.cos(tr), 0).addScaledVector(radial, Math.sin(tr)).normalize();
   rose.position.copy(head); rose.quaternion.setFromUnitVectors(UP, dir); rose.scale.setScalar(h.s);
   rose.rotateY(rand() * Math.PI * 2);
-  rose.userData = { index: i, bloom: 0, dir, hoverT: 0 };
+  // `seed`, `headScale` and `dir` are kept so the bloom can be rebuilt with a
+  // different species later without re-deriving the layout.
+  rose.userData = { index: i, bloom: 0, dir, hoverT: 0, seed: 1000 + i * 77, headScale: h.s, species: 'rose' };
   bouquet.add(rose); roses.push(rose);
   // dew drops
   const posA = geo.attributes.position, norA = geo.attributes.normal, tA = geo.attributes.aT, vA = geo.attributes.aV;
@@ -1570,6 +1898,166 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 roses.forEach(r => r.userData.baseScale = r.scale.x);
+
+/* =========================================================
+   BESPOKE FLORAL STUDIO — species swapping & live colour
+   ========================================================= */
+const studio = {
+  species: 'rose',
+  paletteIndex: 0,
+  // per-bloom colour overrides, keyed by bloom index; null = follow palette
+  overrides: new Map(),
+  selected: -1,          // -1 = whole bouquet, otherwise a single bloom index
+};
+
+// Swap one bloom's geometry to a different species, preserving its transform.
+function rebuildBloom(rose, speciesId){
+  const sp = speciesById(speciesId);
+  const rand = mulberry32(rose.userData.seed);
+  const geo = sp.build(sp.petalCount(), rand);
+  rose.geometry.dispose();
+  rose.geometry = geo;
+  rose.userData.species = speciesId;
+  // Normalise width so the dome packing (solved for PETAL_R) still holds.
+  const s = rose.userData.headScale * sp.fit;
+  rose.userData.baseScale = s;
+  // Dew only suits the dewy species; hide the instanced droplets otherwise.
+  const dew = rose.children.find(c => c.isInstancedMesh);
+  if (dew) dew.visible = !!sp.dew;
+  return s;
+}
+
+// Resolve the colour stops a given bloom should use.
+function stopsFor(index){
+  const ov = studio.overrides.get(index);
+  if (ov) return ov;
+  const pal = PALETTES[SPECIES_PALETTE[studio.species]] || PALETTES.warm;
+  return pal[studio.paletteIndex % pal.length];
+}
+
+// Smoothly lerp a bloom's three gradient uniforms to a target palette.
+function tintBloom(rose, stops, dur = 0.7){
+  const u = rose.material.uniforms;
+  const set = (uni, hex) => {
+    const c = new THREE.Color(hex);
+    gsap.to(uni.value, { r: c.r, g: c.g, b: c.b, duration: dur, ease: 'sine.inOut', overwrite: true });
+  };
+  set(u.uInner, stops.inner); set(u.uMid, stops.mid); set(u.uOuter, stops.outer);
+}
+
+function applyColours(dur = 0.7){
+  roses.forEach((r, i) => tintBloom(r, stopsFor(i), dur));
+}
+
+// Switch the whole bouquet to a species with a stagger of scale-down /
+// rebuild / scale-up, so the swap reads as a graceful morph.
+let switching = false;
+function setSpecies(id, opts = {}){
+  if (switching || id === studio.species) return;
+  const sp = speciesById(id);
+  switching = true;
+  studio.species = id;
+  studio.paletteIndex = 0;
+  studio.overrides.clear();
+  document.querySelectorAll('#studioSpecies .sp-pill').forEach(b => b.classList.toggle('active', b.dataset.species === id));
+  buildSwatches();
+  let done = 0;
+  roses.forEach((rose, i) => {
+    const delay = (i % 7) * 0.035 + Math.floor(i / 7) * 0.02;
+    gsap.to(rose.scale, {
+      x: 0.001, y: 0.001, z: 0.001, duration: 0.28, delay, ease: 'back.in(2)',
+      onComplete: () => {
+        // Preserve however open this bloom currently is, scaled by how far the
+        // new species opens (a tulip should never splay like a rose).
+        const prevOpen = rose.material.uniforms.uBloom.value;
+        const target = rebuildBloom(rose, id);
+        tintBloom(rose, stopsFor(i), 0.01);
+        gsap.to(rose.material.uniforms.uBloom, { value: Math.min(prevOpen, sp.bloomOpen), duration: 0.4 });
+        gsap.to(rose.scale, {
+          x: target, y: target, z: target, duration: 0.55, ease: 'back.out(1.7)',
+          onComplete: () => { if (++done === roses.length) switching = false; }
+        });
+      }
+    });
+  });
+  if (!opts.silent){
+    Audio.resume(); Audio.shimmer(523.25 * (1 + SPECIES.findIndex(s => s.id === id) * 0.12));
+    toast(sp.name + ' — bouquet re-arranged');
+  }
+}
+
+function setPalette(idx){
+  studio.paletteIndex = idx;
+  studio.overrides.clear();
+  document.querySelectorAll('#studioSwatches .sw').forEach((b, k) => b.classList.toggle('active', k === idx));
+  applyColours(0.8);
+  Audio.resume(); Audio.chime(880, 0.03);
+}
+
+// Custom picker: derive a full three-stop gradient from one hex by shading it.
+function stopsFromHex(hex){
+  const base = new THREE.Color(hex);
+  const hsl = { h: 0, s: 0, l: 0 }; base.getHSL(hsl);
+  const inner = new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 1.15), Math.max(0.08, hsl.l * 0.42));
+  const mid   = base.clone();
+  const outer = new THREE.Color().setHSL(hsl.h, Math.max(0, hsl.s * 0.42), Math.min(0.97, hsl.l + (1 - hsl.l) * 0.72));
+  return { name: 'Custom', inner: '#' + inner.getHexString(), mid: '#' + mid.getHexString(), outer: '#' + outer.getHexString() };
+}
+function applyCustomHex(hex){
+  const stops = stopsFromHex(hex);
+  if (studio.selected >= 0){
+    studio.overrides.set(studio.selected, stops);
+    tintBloom(roses[studio.selected], stops, 0.45);
+  } else {
+    studio.overrides.clear();
+    roses.forEach((_, i) => studio.overrides.set(i, stops));
+    applyColours(0.45);
+  }
+  document.querySelectorAll('#studioSwatches .sw').forEach(b => b.classList.remove('active'));
+}
+
+/* ---------- Studio UI ---------- */
+const SPECIES_ICON = { rose: '🌹', tulip: '🌷', peony: '🌸', hydrangea: '💠', calla: '🌼' };
+function buildSpeciesTabs(){
+  const host = $('#studioSpecies'); if (!host) return;
+  host.innerHTML = '';
+  SPECIES.forEach(sp => {
+    const b = document.createElement('button');
+    b.className = 'sp-pill' + (sp.id === studio.species ? ' active' : '');
+    b.dataset.species = sp.id;
+    b.innerHTML = '<span class="ico">' + (SPECIES_ICON[sp.id] || '❀') + '</span><span>' + sp.name + '</span>';
+    b.addEventListener('click', () => setSpecies(sp.id));
+    host.appendChild(b);
+  });
+}
+function buildSwatches(){
+  const host = $('#studioSwatches'); if (!host) return;
+  const pal = PALETTES[SPECIES_PALETTE[studio.species]] || PALETTES.warm;
+  host.innerHTML = '';
+  pal.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.className = 'sw' + (i === studio.paletteIndex ? ' active' : '');
+    b.style.background = 'linear-gradient(135deg,' + p.outer + ' 0%,' + p.mid + ' 52%,' + p.inner + ' 100%)';
+    b.innerHTML = '<span class="swname">' + p.name + '</span>';
+    b.addEventListener('click', () => setPalette(i));
+    host.appendChild(b);
+  });
+}
+function updateStudioTarget(){
+  const el = $('#studioTarget'); if (!el) return;
+  el.textContent = studio.selected >= 0 ? '· single bloom' : '· whole bouquet';
+}
+buildSpeciesTabs(); buildSwatches(); updateStudioTarget();
+$('#studioPicker').addEventListener('input', (e) => applyCustomHex(e.target.value));
+$('#btnStudio').addEventListener('click', () => {
+  const el = $('#studio');
+  const on = el.classList.toggle('show');
+  $('#btnStudio').classList.toggle('active', on);
+  Audio.resume(); Audio.chime(on ? 784 : 587, 0.04);
+  if (on) toast('Floral Studio — tap a bloom to colour it alone');
+  else { studio.selected = -1; updateStudioTarget(); }
+});
+
 const endPointer = e => {
   input.pointers.delete(e.pointerId); if (input.pointers.size < 2) input.pinch = 0;
   if (!input.dragging) return; input.dragging = false; canvas.classList.remove('dragging');
@@ -1579,6 +2067,18 @@ canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('point
 canvas.addEventListener('wheel', e => { e.preventDefault(); camDistTarget = clamp(camDistTarget + e.deltaY * 0.004, baseDist * 0.62, baseDist * 1.5); }, { passive: false });
 const worldPos = new THREE.Vector3();
 function touchRose(rose){
+  // While the studio shelf is open a tap SELECTS the bloom for colouring
+  // instead of bursting it, so single-flower colours can be picked directly.
+  if ($('#studio').classList.contains('show')){
+    const i = roses.indexOf(rose);
+    studio.selected = (studio.selected === i) ? -1 : i;
+    updateStudioTarget();
+    Audio.resume(); Audio.chime(studio.selected >= 0 ? 1046.5 : 659.25, 0.04);
+    const s = rose.userData.baseScale;
+    gsap.fromTo(rose.scale, { x: s, y: s, z: s }, { x: s * 1.14, y: s * 1.14, z: s * 1.14, duration: 0.22, yoyo: true, repeat: 1, ease: 'sine.inOut' });
+    toast(studio.selected >= 0 ? 'Bloom selected — pick a colour' : 'Whole bouquet selected');
+    return;
+  }
   Audio.resume(); Audio.shimmer(523.25 * [1, 1.125, 1.25, 1.5][rose.userData.index % 4]);
   const u = rose.material.uniforms.uBloom; gsap.killTweensOf(u);
   gsap.to(u, { value: 1, duration: 0.9, ease: 'back.out(2.2)', onComplete: () => gsap.to(u, { value: 0.12, duration: 3.2, ease: 'sine.inOut' }) });
