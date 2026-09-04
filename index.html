@@ -746,9 +746,21 @@ const dewMat = new THREE.ShaderMaterial({
 const bouquet = new THREE.Group(); scene.add(bouquet);
 const roses = [], roseProxies = [];
 const PETALS = isMobile ? 84 : 96;
+// Bouquet layout — concentric rings of rose heads, densest at the crown.
+// Radii stay within ~1.62 so the silhouette still fits the narrow portrait
+// viewport (half-width is only ~2.1 world units at phone aspect ratios).
 const headDefs = [{ p: [0, 2.1, 0], s: 0.68 }];
 for (let i = 0; i < 6; i++){ const a = i / 6 * Math.PI * 2 + 0.3; headDefs.push({ p: [Math.cos(a) * 0.98, 1.72 + Math.sin(a * 2) * 0.05, Math.sin(a) * 0.98], s: 0.62 }); }
 for (let i = 0; i < 6; i++){ const a = i / 6 * Math.PI * 2 + 0.3 + Math.PI / 6; headDefs.push({ p: [Math.cos(a) * 1.62, 1.18 + Math.cos(a * 3) * 0.06, Math.sin(a) * 1.62], s: 0.6 }); }
+// Mid-layer blooms nestled below the crown, filling the gap between rings.
+// Radii/heights/scales below were solved so every head keeps a positive
+// clearance margin from all others (no interpenetrating petals) on both the
+// full desktop set and the reduced mobile subset.
+const MID_ROSES = isMobile ? 4 : 6;
+for (let i = 0; i < MID_ROSES; i++){ const a = i / MID_ROSES * Math.PI * 2 + 1.02; headDefs.push({ p: [Math.cos(a) * 0.94, 1.18 + Math.sin(a * 2) * 0.07, Math.sin(a) * 0.94], s: 0.43 }); }
+// Lower skirt blooms that close the gap above the ribbon.
+const LOW_ROSES = isMobile ? 3 : 5;
+for (let i = 0; i < LOW_ROSES; i++){ const a = i / LOW_ROSES * Math.PI * 2 - 0.15; headDefs.push({ p: [Math.cos(a) * 1.12, 0.38 + Math.cos(a * 2) * 0.08, Math.sin(a) * 1.12], s: 0.48 }); }
 const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.72, metalness: 0.0 });
 const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
 const thornGeo = new THREE.ConeGeometry(0.018, 0.075, 5); thornGeo.translate(0, 0.037, 0);
@@ -818,8 +830,9 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x5f8b72, roughness: 0.68, metalness: 0.08, side: THREE.DoubleSide });
   const branchMat = new THREE.MeshStandardMaterial({ color: 0x6b6a4a, roughness: 0.8 });
   const leafMats = [], leafCols = [];
-  for (let b = 0; b < 7; b++){
-    const a = b / 7 * Math.PI * 2 + 0.55 + (rand() - 0.5) * 0.4; const cx = Math.cos(a), cz = Math.sin(a);
+  const EUC_BRANCHES = isMobile ? 8 : 11;
+  for (let b = 0; b < EUC_BRANCHES; b++){
+    const a = b / EUC_BRANCHES * Math.PI * 2 + 0.55 + (rand() - 0.5) * 0.4; const cx = Math.cos(a), cz = Math.sin(a);
     const reach = 1.55 + rand() * 0.5, top = 0.7 + rand() * 0.9;
     const pts = [new THREE.Vector3(cx * 0.1, -1.6, cz * 0.1), new THREE.Vector3(cx * 0.8, -0.2, cz * 0.8), new THREE.Vector3(cx * reach, top, cz * reach)];
     const curve = new THREE.CatmullRomCurve3(pts);
@@ -847,8 +860,9 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   const bbMat = new THREE.MeshStandardMaterial({ color: 0xfff8ee, roughness: 0.9, emissive: 0xfff1dc, emissiveIntensity: 0.22 });
   const stemThin = new THREE.MeshStandardMaterial({ color: 0x7d8f5a, roughness: 0.85 });
   const mats = [];
-  for (let s = 0; s < 7; s++){
-    const a = s / 7 * Math.PI * 2 + 1.1 + (rand() - 0.5) * 0.5; const cx = Math.cos(a), cz = Math.sin(a);
+  const BB_SPRIGS = isMobile ? 8 : 11;
+  for (let s = 0; s < BB_SPRIGS; s++){
+    const a = s / BB_SPRIGS * Math.PI * 2 + 1.1 + (rand() - 0.5) * 0.5; const cx = Math.cos(a), cz = Math.sin(a);
     const reach = 1.1 + rand() * 0.8, top = 1.5 + rand() * 0.9;
     const end = new THREE.Vector3(cx * reach, top, cz * reach);
     const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(cx * 0.05, -1.4, cz * 0.05), new THREE.Vector3(cx * reach * 0.5, top * 0.35, cz * reach * 0.5), end]);
@@ -1232,36 +1246,12 @@ function updateURL(){
     history.replaceState(null, '', newUrl);
   } catch (e){}
 }
-function saveToStorage(){
-  // Only the visitor's own letter is persisted. Letters opened from a shared
-  // link stay ephemeral so the sender's names never become this user's default.
-  if (state.received && !state.authored) return;
-  try {
-    localStorage.setItem('juliet_saved_letter', JSON.stringify({
-      text: state.text, to: state.to, from: state.from, font: state.font, preset: currentPreset, authored: true, updatedAt: Date.now()
-    }));
-  } catch (e){}
-}
-function loadFromStorage(){
-  try {
-    const raw = localStorage.getItem('juliet_saved_letter');
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    if (saved && (saved.text || saved.to || saved.from)){
-      if (saved.text) state.text = saved.text;
-      if (typeof saved.font === 'number' && saved.font < FONTS.length) state.font = saved.font;
-      if (typeof saved.preset === 'number' && saved.preset < presets.length) currentPreset = saved.preset;
-      // Names are restored only for letters this user actually authored.
-      // Legacy entries (written before the `authored` flag existed) may hold a
-      // received letter's names, so they are intentionally dropped.
-      if (saved.authored === true){
-        state.authored = true;
-        if (saved.to) state.to = saved.to;
-        if (saved.from) state.from = saved.from;
-      }
-      updateURL();
-    }
-  } catch (e){}
+// The URL is the single source of truth for a letter's contents.
+// Nothing is persisted locally: the plain site address must ALWAYS open the
+// default letter, and only a link carrying query params shows a custom one.
+// Clear any letter saved by earlier versions so it can't leak into the default.
+function purgeLegacyStorage(){
+  try { localStorage.removeItem('juliet_saved_letter'); } catch (e){}
 }
 function updateEnvelopeDisplay(){
   const to = toName(), from = fromName();
@@ -1312,11 +1302,10 @@ function readURL(){
   const f = +q.get('f'); if (f >= 0 && f < FONTS.length) state.font = f;
   const l = +(q.get('l') || q.get('p')); if (l >= 0 && l < presets.length) currentPreset = l;
   if (to || from || m){
-    // Arrived via a shared link: show it for this visit only, don't persist it.
+    // Arrived via a shared link: render exactly what the link carries.
     state.received = true;
-  } else {
-    loadFromStorage();
   }
+  // No params => the pristine default letter. Nothing is restored from storage.
 }
 function updateFloatingButton(){
   const btn = $('#floatingShareBtn');
@@ -1333,6 +1322,7 @@ function updateFloatingButton(){
     btn.classList.remove('show');
   }
 }
+purgeLegacyStorage();
 readURL(); applyFont(state.font); applyPreset(currentPreset, 0.01);
 updateEnvelopeDisplay(); updateIntroDisplay(); updateFloatingButton();
 
@@ -1523,10 +1513,10 @@ function closeModal(apply){
     if (senderInput) state.from = senderInput.value.trim();
     const txt = msg.value.trim();
     if (txt) state.text = txt;
-    // The visitor has now made this letter their own.
+    // The visitor has now made this letter their own. It lives only in the
+    // URL, so their edits are shareable without ever becoming the site default.
     state.authored = true;
     state.received = false;
-    saveToStorage();
     updateURL();
     updateEnvelopeDisplay();
     updateIntroDisplay();
@@ -1564,7 +1554,7 @@ $('#btnResetDefault').addEventListener('click', () => {
   if (senderInput) senderInput.value = '';
   msg.value = ORIGINAL;
   applyFont(0);
-  try { localStorage.removeItem('juliet_saved_letter'); } catch (e){}
+  purgeLegacyStorage();
   updateURL();
   updateEnvelopeDisplay();
   updateIntroDisplay();
@@ -1603,7 +1593,6 @@ async function copyToClipboard(text){
 }
 function openShareModal(){
   updateURL();
-  saveToStorage();
   const url = getShareableURL();
   $('#shareLinkInput').value = url;
   const title = $('#shareModalTitle');
