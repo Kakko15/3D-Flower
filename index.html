@@ -792,6 +792,14 @@ for (let i = 0; i < 7; i++){
   const a = i / 7 * Math.PI * 2 + 0.3 + Math.PI / 7;
   headDefs.push({ p: [Math.cos(a) * 1.52, 0.75 + Math.cos(a * 3) * 0.06, Math.sin(a) * 1.52], s: 0.54, tilt: 72 });
 }
+// Upper-middle fillers. Ray-casting the centre of the dome showed a band at
+// y = 1.25..1.65 where the camera saw straight past the blooms onto the bare
+// stem cluster. These three sit in that band and lean forward/outward to face
+// the viewer, closing the hole between the crown and the outer ring.
+for (let i = 0; i < 3; i++){
+  const a = i / 3 * Math.PI * 2 + 0.8;
+  headDefs.push({ p: [Math.cos(a) * 0.55, 1.15, Math.sin(a) * 0.55], s: 0.52, tilt: 30 });
+}
 const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.72, metalness: 0.0 });
 const calyxMat = new THREE.MeshStandardMaterial({ color: 0x4d7a45, roughness: 0.8 });
 const thornGeo = new THREE.ConeGeometry(0.018, 0.075, 5); thornGeo.translate(0, 0.037, 0);
@@ -914,14 +922,16 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
   // short, near-vertical sprigs packed tightly around the axis and fanning out
   // just beneath the blooms, so the view down into the middle of the dome hits
   // leaves rather than bare stems.
-  const INNER_SPRIGS = isMobile ? 16 : 26;
+  const INNER_SPRIGS = isMobile ? 20 : 32;
   for (let b = 0; b < INNER_SPRIGS; b++){
-    // two concentric skirts of filler at different heights
-    const tier = b % 2;
-    const a = b / INNER_SPRIGS * Math.PI * 2 * 2 + rand() * 0.7;
+    // Three concentric skirts at increasing heights. The tallest tier reaches
+    // up into y ~ 1.3-1.8, the band where ray-casting showed the camera could
+    // see through the dome onto the bare stem cluster.
+    const tier = b % 3;
+    const a = b / INNER_SPRIGS * Math.PI * 2 * 3 + rand() * 0.7;
     const cx = Math.cos(a), cz = Math.sin(a);
-    const reach = tier ? 0.5 + rand() * 0.32 : 0.85 + rand() * 0.4;
-    const top = tier ? 0.85 + rand() * 0.5 : 0.35 + rand() * 0.45;
+    const reach = tier === 2 ? 0.42 + rand() * 0.3 : tier ? 0.5 + rand() * 0.32 : 0.85 + rand() * 0.4;
+    const top = tier === 2 ? 1.34 + rand() * 0.46 : tier ? 0.85 + rand() * 0.5 : 0.35 + rand() * 0.45;
     const pts = [
       new THREE.Vector3(cx * 0.06, -1.2, cz * 0.06),
       new THREE.Vector3(cx * reach * 0.5, top * 0.35 - 0.45, cz * reach * 0.5),
@@ -1045,12 +1055,71 @@ const thorns = new THREE.InstancedMesh(thornGeo, thornMat, thornMatrices.length)
       if (rNow > MAX_R){ const k = MAX_R / rNow; end.x *= k; end.z *= k; }
       if (end.y < 1.25) end.y = 1.25;        // keep sprigs in the upper canopy
     }
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(cx * 0.05, -1.4, cz * 0.05),
-      new THREE.Vector3(cx * reach * 0.5, top * 0.35, cz * reach * 0.5),
-      end
-    ]);
-    { const tg = new THREE.TubeGeometry(curve, 10, 0.008, 4); tg.deleteAttribute('uv'); bbStemGeos.push(tg); }
+    // Route the STEM itself clear of the blooms, not just its tip. Previously
+    // only the cluster centre was collision-tested, so the shaft could still
+    // run straight through a rose head on its way up. The path is built from
+    // several waypoints, each pushed out of any bloom it intersects, so the
+    // sprig threads up behind and between the flowers.
+    const path = [];
+    const WP = 5;
+    for (let w = 0; w <= WP; w++){
+      const t = w / WP;
+      const wp = new THREE.Vector3(
+        cx * (0.05 + (reach - 0.05) * t * t),
+        -1.4 + (end.y + 1.4) * Math.pow(t, 0.85),
+        cz * (0.05 + (reach - 0.05) * t * t)
+      );
+      if (w === WP) wp.copy(end);
+      // Shove this waypoint outside every bloom, preferring to move it
+      // downward/inward (behind the flowers) rather than out through them.
+      for (let iter = 0; iter < 24 && w > 0 && w < WP; iter++){
+        let worst = -1, wi = -1;
+        for (let k = 0; k < heads.length; k++){
+          const need = headR[k] + 0.14;
+          const d = wp.distanceTo(heads[k]);
+          if (need - d > worst){ worst = need - d; wi = k; }
+        }
+        if (worst <= 0) break;
+        const push = wp.clone().sub(heads[wi]);
+        if (push.lengthSq() < 1e-6) push.set(-cx, -1, -cz);
+        push.normalize().multiplyScalar(worst + 0.05);
+        wp.add(push);
+        const rN = Math.hypot(wp.x, wp.z);
+        if (rN > MAX_R){ const k2 = MAX_R / rN; wp.x *= k2; wp.z *= k2; }
+      }
+      path.push(wp);
+    }
+    // Waypoints alone are not enough: the spline can still bow through a bloom
+    // *between* them. Resample the finished curve and nudge any offending
+    // waypoint until the whole path is clear.
+    let curve = new THREE.CatmullRomCurve3(path);
+    for (let pass = 0; pass < 8; pass++){
+      let hit = false;
+      for (let sI = 1; sI < 40; sI++){
+        const pt = curve.getPoint(sI / 40);
+        for (let k = 0; k < heads.length; k++){
+          const need = headR[k] + 0.1;
+          const d = pt.distanceTo(heads[k]);
+          if (d >= need) continue;
+          hit = true;
+          // find the nearest interior waypoint and push it clear
+          let bi = 1, bd = Infinity;
+          for (let w = 1; w < path.length - 1; w++){
+            const dd = path[w].distanceTo(pt);
+            if (dd < bd){ bd = dd; bi = w; }
+          }
+          const push = path[bi].clone().sub(heads[k]);
+          if (push.lengthSq() < 1e-6) push.set(-cx, -1, -cz);
+          push.normalize().multiplyScalar(need - d + 0.05);
+          path[bi].add(push);
+          const rN = Math.hypot(path[bi].x, path[bi].z);
+          if (rN > MAX_R){ const k2 = MAX_R / rN; path[bi].x *= k2; path[bi].z *= k2; }
+        }
+      }
+      if (!hit) break;
+      curve = new THREE.CatmullRomCurve3(path);
+    }
+    { const tg = new THREE.TubeGeometry(curve, 20, 0.008, 4); tg.deleteAttribute('uv'); bbStemGeos.push(tg); }
     const n = 16 + (rand() * 10) | 0;
     for (let i = 0; i < n; i++){
       const th = rand() * Math.PI * 2, ph = Math.acos(2 * rand() - 1), rr = 0.12 + rand() * 0.22;
